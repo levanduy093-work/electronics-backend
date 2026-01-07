@@ -1,98 +1,132 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# electronics-backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend NestJS cho cửa hàng linh kiện điện tử. Kết nối MongoDB, tổ chức theo module rõ ràng cho từng collection.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Kiến trúc thư mục
+- `src/app.module.ts`: Root module, nạp config và Mongo.
+- `src/main.ts`: Bootstrap + ValidationPipe.
+- `src/auth`, `src/users`, `src/products`, `src/orders`, `src/carts`, `src/vouchers`, `src/reviews`, `src/transactions`, `src/shipments`, `src/inventory-movements`, `src/chat`, `src/ai`, `src/health`: Module đặc thù.
+- `src/common`: Chia sẵn decorators/guards/pipes.
+- `src/config`: Đặt cấu hình mở rộng (nếu thêm).
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+## Cấu hình môi trường
+App dùng `@nestjs/config`. Thiết lập biến môi trường (tạo `.env` hoặc export):
+```
+MONGO_URI=mongodb://admin:123456@localhost:27017/electronics_shop?authSource=admin
+PORT=3000
+JWT_SECRET=change-me
 ```
 
-## Compile and run the project
-
+## Cài đặt & chạy
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+npm run start:dev   # hot reload
+# hoặc
+npm run start       # chạy thường
 ```
 
-## Run tests
+## API hiện có (REST)
+Base URL: `http://localhost:${PORT:-3000}`
 
+- **Health**
+  - `GET /health`
+
+- **Auth**
+  - `POST /auth/register` (public) — name, email, password, avatar?, role?, address?
+  - `POST /auth/login` (public) — email, password → `{ accessToken, user }`
+  - Với các API còn lại: gửi header `Authorization: Bearer <accessToken>`
+
+- **Users**
+  - `POST /users` tạo user (name, email, password, avatar?, role?, address[]); server sẽ hash
+  - `GET /users` danh sách (ẩn passwordHashed)
+  - `GET /users/:id` chi tiết
+  - `PATCH /users/:id` cập nhật
+  - `DELETE /users/:id` xóa
+  - `POST /users/:id/address` thêm địa chỉ
+  - `PATCH /users/:id/address/:index/default` đặt địa chỉ mặc định
+
+- **Products**
+  - `POST /products` (name, price{originalPrice,salePrice}, category?, description?, images?, specs?, stock?, code?, datasheet?)
+  - `GET /products`
+  - `GET /products/:id`
+  - `PATCH /products/:id`
+  - `DELETE /products/:id`
+
+- **Vouchers**
+  - `POST /vouchers` (code, description?, discountPrice, minTotal, expire)
+  - `GET /vouchers`
+  - `GET /vouchers/:id`
+  - `PATCH /vouchers/:id`
+  - `DELETE /vouchers/:id`
+
+- **Carts**
+  - `POST /carts` (userId, items[{productId,quantity,price,name?,category?,image?}], voucher?, totals?)
+  - `GET /carts`
+  - `GET /carts/:id`
+  - `PATCH /carts/:id`
+  - `DELETE /carts/:id`
+
+- **Orders**
+  - `POST /orders` (code, userId, status dates?, isCancelled?, shippingAddress?, items[{productId,name,quantity,price,subTotal,shippingFee?,discount?,totalPrice}], voucher?, subTotal, shippingFee, discount, totalPrice, payment?, paymentStatus?)
+  - `GET /orders`
+  - `GET /orders/:id`
+  - `PATCH /orders/:id`
+  - `DELETE /orders/:id`
+
+- **Reviews**
+  - `POST /reviews` (productId, rating, comment?, images?, user{avatar?,name?}?)
+  - `GET /reviews`
+  - `GET /reviews/:id`
+  - `PATCH /reviews/:id`
+  - `DELETE /reviews/:id`
+
+- **Transactions**
+  - `POST /transactions` (orderId, userId, provider, amount, currency, status, paidAt?)
+  - `GET /transactions`
+  - `GET /transactions/:id`
+  - `PATCH /transactions/:id`
+  - `DELETE /transactions/:id`
+
+- **Shipments**
+  - `POST /shipments` (orderId, carrier, trackingNumber, status, statusHistory?, expectedDelivery?)
+  - `GET /shipments`
+  - `GET /shipments/:id`
+  - `PATCH /shipments/:id`
+  - `DELETE /shipments/:id`
+
+- **Inventory movements**
+  - `POST /inventory-movements` (productId, type[inbound|outbound], quantity, note?)
+  - `GET /inventory-movements`
+  - `GET /inventory-movements/:id`
+  - `PATCH /inventory-movements/:id`
+  - `DELETE /inventory-movements/:id`
+
+- **Chat session**
+  - `POST /chat` (userId, messages[{role,time?,content{text?,images[]?}}]?)
+  - `GET /chat`
+  - `GET /chat/:id`
+  - `PATCH /chat/:id`
+  - `POST /chat/:id/messages` thêm tin nhắn
+  - `DELETE /chat/:id`
+
+## Test nhanh (curl)
 ```bash
-# unit tests
-$ npm run test
+# 1) Đăng ký (public)
+curl -X POST http://localhost:3000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test","email":"test@example.com","password":"12345678"}'
 
-# e2e tests
-$ npm run test:e2e
+# 2) Đăng nhập để lấy token
+TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"12345678"}' | jq -r '.accessToken')
 
-# test coverage
-$ npm run test:cov
+# 3) Gọi API cần bảo vệ
+curl http://localhost:3000/users \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## Ghi chú phát triển tiếp
+- JWT Guard đã bật global, chỉ `/health` và `/auth/*` là public. Cân nhắc phân quyền role (admin/customer) và kiểm tra quyền sở hữu tài nguyên.
+- Bổ sung enum/ràng buộc nghiệp vụ (status, type) và validate foreign key khi cần.
+- Thêm test cho auth và các module.
