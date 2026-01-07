@@ -13,7 +13,7 @@ export class OtpService {
     private readonly configService: ConfigService,
   ) {}
 
-  async createCode(email: string, purpose: string) {
+  async createCode(email: string, purpose: string, payload?: Record<string, any>) {
     const code = this.generateCode();
     const codeHashed = await bcrypt.hash(code, 10);
     const ttlSeconds = this.configService.get<number>('OTP_TTL_SECONDS') ?? 600; // 10 minutes
@@ -28,6 +28,7 @@ export class OtpService {
       expiresAt,
       attempts: 0,
       used: false,
+      payload,
     });
 
     return { code, expiresAt };
@@ -61,6 +62,8 @@ export class OtpService {
 
     record.used = true;
     await record.save();
+
+    return record.payload;
   }
 
   private generateCode() {

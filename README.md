@@ -16,7 +16,7 @@ MONGO_URI=mongodb://<user>:<pass>@localhost:27017/electronics_shop?authSource=ad
 JWT_SECRET=<random-32+ chars>       # ký access token 30 phút
 REFRESH_SECRET=<random-32+ chars>   # ký refresh token 30 ngày, khác với JWT_SECRET
 PORT=3000
-CORS_ORIGINS=http://localhost:3000   # danh sách origin, phân tách dấu phẩy (ví dụ thêm https://admin.yourdomain.com)
+CORS_ORIGINS=http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500   # danh sách origin, phân tách dấu phẩy
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=<smtp-username>
@@ -28,10 +28,12 @@ OTP_MAX_ATTEMPTS=5                   # khóa OTP nếu nhập sai quá số lầ
 ```
 Không commit `.env`. Secrets cần đủ dài/ngẫu nhiên; có thể tạo bằng `openssl rand -hex 32`.
 
-### Luồng đăng nhập OTP (email)
-- Gửi OTP: `POST /auth/send-otp` body `{"email":"<email>","password":"<password>"}` — kiểm tra mật khẩu rồi gửi mã 6 số qua email, TTL mặc định 10 phút.
-- Xác minh OTP: `POST /auth/verify-otp` body `{"email":"<email>","code":"123456"}` — trả về `{ user, accessToken, refreshToken }`.
-- Giới hạn: tối đa 5 lần nhập sai (config `OTP_MAX_ATTEMPTS`), có throttle per-endpoint.
+### Đăng nhập
+- Đăng nhập dùng mật khẩu bình thường (OTP không áp dụng cho login).
+
+### Luồng đăng ký với OTP (chỉ tạo user khi đã xác minh)
+- Gửi OTP đăng ký: `POST /auth/register/send-otp` body `{"email":"<email>","password":"<password>","name":"<optional>"}` — chỉ lưu tạm hash mật khẩu trong collection otp_codes, chưa tạo user.
+- Xác minh OTP đăng ký: `POST /auth/register/verify-otp` body `{"email":"<email>","code":"123456"}` — tạo user và trả `{ user, accessToken, refreshToken }`.
 
 ## Bảo mật đã bật
 - Bắt buộc thiết lập `MONGO_URI` và `JWT_SECRET` qua biến môi trường; thiếu sẽ không khởi động.
@@ -57,10 +59,11 @@ Base URL: `http://localhost:${PORT:-3000}`
   - `GET /health`
 
 - **Auth**
-  - `POST /auth/register` (public) — name, email, password, avatar?, role?, address?
-  - `POST /auth/login` (public) — email, password → `{ accessToken, user }`
-  - `POST /auth/send-otp` (public) — email, password → gửi OTP 6 số qua email (TTL mặc định 10 phút, tối đa 5 lần nhập sai)
-  - `POST /auth/verify-otp` (public) — email, code → `{ accessToken, refreshToken, user }` (đăng nhập bằng OTP sau khi đã xác thực email + password ở bước gửi OTP)
+  - Đăng ký thẳng: `POST /auth/register` (public) — name, email, password, avatar?, role?, address?
+  - Đăng ký qua OTP (chỉ tạo user khi đã xác minh):
+    - `POST /auth/register/send-otp` — email, password, name? → gửi OTP đăng ký (chưa tạo user)
+    - `POST /auth/register/verify-otp` — email, code → tạo user + trả token
+  - Đăng nhập thẳng: `POST /auth/login` (public) — email, password → `{ accessToken, user }`
   - Với các API còn lại: gửi header `Authorization: Bearer <accessToken>`
 
 - **Users**

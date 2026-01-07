@@ -21,6 +21,11 @@ export class UsersService {
     return this.toSafeUser(created.toObject());
   }
 
+  async createWithHashedPassword(data: Omit<CreateUserDto, 'password'> & { passwordHashed: string }) {
+    const created = await this.userModel.create({ ...data });
+    return this.toSafeUser(created.toObject());
+  }
+
   async findAll() {
     const users = await this.userModel.find().lean();
     return users.map(this.toSafeUser);

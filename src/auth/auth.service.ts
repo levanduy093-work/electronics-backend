@@ -9,10 +9,11 @@ import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
-import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { OtpService } from './otp.service';
 import { MailService } from './mail.service';
+import { RegisterOtpDto } from './dto/register-otp.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -66,28 +67,39 @@ export class AuthService {
     return { user: this.toSafeUser(user), ...tokens };
   }
 
-  async sendLoginOtp(dto: SendOtpDto) {
-    const user = await this.usersService.findByEmail(dto.email);
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+  async sendRegisterOtp(dto: RegisterOtpDto) {
+    const existing = await this.usersService.findByEmail(dto.email);
+    if (existing) {
+      throw new ConflictException('Email already registered');
     }
-    const isValid = await this.usersService.comparePassword(user, dto.password);
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const { code, expiresAt } = await this.otpService.createCode(dto.email, 'login');
+    const passwordHashed = await bcrypt.hash(dto.password, 10);
+    const payload = {
+      name: dto.name ?? dto.email,
+      email: dto.email.toLowerCase(),
+      passwordHashed,
+    };
+    const { code, expiresAt } = await this.otpService.createCode(dto.email, 'register', payload);
     await this.mailService.sendOtp(dto.email, code, expiresAt);
-
     return { message: 'OTP has been sent to your email' };
   }
 
-  async verifyLoginOtp(dto: VerifyOtpDto) {
-    await this.otpService.verifyCode(dto.email, 'login', dto.code);
-    const user = await this.usersService.findByEmail(dto.email);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
+  async verifyRegisterOtp(dto: VerifyOtpDto) {
+    const payload = await this.otpService.verifyCode(dto.email, 'register', dto.code);
+    if (!payload?.passwordHashed) {
+      throw new UnauthorizedException('Invalid OTP payload');
     }
+    const existing = await this.usersService.findByEmail(dto.email);
+    if (existing) {
+      throw new ConflictException('Email already registered');
+    }
+    const user = await this.usersService.createWithHashedPassword({
+      name: payload.name ?? dto.email,
+      email: payload.email ?? dto.email.toLowerCase(),
+      passwordHashed: payload.passwordHashed,
+      avatar: payload.avatar,
+      address: payload.address ?? [],
+      role: payload.role ?? 'customer',
+    });
     const userId = (user as any)._id?.toString?.() ?? '';
     const tokens = this.signTokens(userId, user.email ?? '', user.role);
     return { user: this.toSafeUser(user), ...tokens };

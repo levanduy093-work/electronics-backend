@@ -13,7 +13,8 @@ export class MailService {
     const port = Number(this.configService.get<number>('SMTP_PORT'));
     const user = this.configService.get<string>('SMTP_USER');
     const pass = this.configService.get<string>('SMTP_PASS');
-    this.from = this.configService.get<string>('SMTP_FROM') ?? user;
+    const from = this.configService.get<string>('SMTP_FROM') || user || '';
+    this.from = from;
     const secureFlag = this.configService.get<string>('SMTP_SECURE');
     const secure = secureFlag ? secureFlag === 'true' : port === 465;
 

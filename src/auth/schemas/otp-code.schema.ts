@@ -9,6 +9,9 @@ export class OtpCode {
   @Prop({ required: true })
   purpose: string;
 
+  @Prop({ type: Object, required: false })
+  payload?: Record<string, any>;
+
   @Prop({ required: true })
   codeHashed: string;
 
