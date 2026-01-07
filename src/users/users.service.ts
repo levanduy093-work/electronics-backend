@@ -15,8 +15,9 @@ export class UsersService {
   ) {}
 
   async create(data: CreateUserDto) {
-    const passwordHash = await this.resolvePassword(data.password, data.passwordHashed);
-    const created = await this.userModel.create({ ...data, passwordHashed: passwordHash });
+    const passwordHash = await this.hashPassword(data.password);
+    const { password, ...rest } = data;
+    const created = await this.userModel.create({ ...rest, passwordHashed: passwordHash });
     return this.toSafeUser(created.toObject());
   }
 
@@ -35,9 +36,10 @@ export class UsersService {
 
   async update(id: string, data: UpdateUserDto) {
     const patch: any = { ...data };
-    if (data.password || data.passwordHashed) {
-      patch.passwordHashed = await this.resolvePassword(data.password, data.passwordHashed);
+    if (data.password) {
+      patch.passwordHashed = await this.hashPassword(data.password);
     }
+    delete patch.password;
     const updated = await this.userModel
       .findByIdAndUpdate(id, patch, { new: true, lean: true })
       .exec();
@@ -92,6 +94,10 @@ export class UsersService {
     return rest;
   };
 
+  async findByIdRaw(id: string) {
+    return this.userModel.findById(id).lean();
+  }
+
   async findByEmail(email: string) {
     return this.userModel.findOne({ email }).lean();
   }
@@ -103,16 +109,9 @@ export class UsersService {
     return bcrypt.compare(plain, user.passwordHashed);
   }
 
-  private async resolvePassword(password?: string, passwordHashed?: string) {
+  private async hashPassword(password?: string) {
     if (password) {
       return bcrypt.hash(password, 10);
-    }
-    if (passwordHashed) {
-      const looksHashed = passwordHashed.startsWith('$2b$') || passwordHashed.startsWith('$2a$');
-      if (!looksHashed) {
-        throw new BadRequestException('passwordHashed must be bcrypt-hashed');
-      }
-      return passwordHashed;
     }
     throw new BadRequestException('Password is required');
   }

@@ -13,7 +13,8 @@ export class ProductsService {
   ) {}
 
   async create(data: CreateProductDto) {
-    const created = await this.productModel.create(data);
+    const { averageRating, reviewCount, saleCount, ...payload } = data;
+    const created = await this.productModel.create(payload);
     return this.strip(created.toObject());
   }
 
@@ -29,8 +30,9 @@ export class ProductsService {
   }
 
   async update(id: string, data: UpdateProductDto) {
+    const { averageRating, reviewCount, saleCount, ...payload } = data;
     const doc = await this.productModel
-      .findByIdAndUpdate(id, data, { new: true, lean: true })
+      .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Product not found');
     return this.strip(doc);

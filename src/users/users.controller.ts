@@ -1,5 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
 import { AddressDto } from './dto/address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -7,7 +9,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 

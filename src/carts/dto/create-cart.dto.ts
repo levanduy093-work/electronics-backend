@@ -22,9 +22,6 @@ class CartItemDto {
 }
 
 export class CreateCartDto {
-  @IsMongoId()
-  userId: string;
-
   @IsOptional()
   @IsMongoId()
   voucher?: string;

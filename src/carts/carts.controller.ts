@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtPayload } from '../common/types/jwt-payload';
 import { CartsService } from './carts.service';
 import { CreateCartDto } from './dto/create-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
@@ -11,27 +13,31 @@ export class CartsController {
   constructor(private readonly cartsService: CartsService) {}
 
   @Post()
-  create(@Body() dto: CreateCartDto) {
-    return this.cartsService.create(dto);
+  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateCartDto) {
+    return this.cartsService.create(dto, user);
   }
 
   @Get()
-  findAll() {
-    return this.cartsService.findAll();
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.cartsService.findAll(user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.cartsService.findOne(id);
+  findOne(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.cartsService.findOne(id, user);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateCartDto) {
-    return this.cartsService.update(id, dto);
+  update(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateCartDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.cartsService.update(id, dto, user);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseObjectIdPipe) id: string) {
-    return this.cartsService.remove(id);
+  remove(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.cartsService.remove(id, user);
   }
 }

@@ -1,7 +1,6 @@
 import {
   IsArray,
   IsDateString,
-  IsMongoId,
   IsOptional,
   IsString,
   ValidateNested,
@@ -33,9 +32,6 @@ export class ChatMessageDto {
 }
 
 export class CreateChatSessionDto {
-  @IsMongoId()
-  userId: string;
-
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

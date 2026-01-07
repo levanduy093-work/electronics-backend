@@ -3,6 +3,7 @@ import {
   IsEmail,
   IsOptional,
   IsString,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -16,15 +17,12 @@ export class RegisterDto {
   email: string;
 
   @IsString()
+  @MinLength(8)
   password: string;
 
   @IsOptional()
   @IsString()
   avatar?: string;
-
-  @IsOptional()
-  @IsString()
-  role?: string;
 
   @IsOptional()
   @IsArray()

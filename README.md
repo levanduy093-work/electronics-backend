@@ -12,10 +12,17 @@ Backend NestJS cho cửa hàng linh kiện điện tử. Kết nối MongoDB, t�
 ## Cấu hình môi trường
 App dùng `@nestjs/config`. Thiết lập biến môi trường (tạo `.env` hoặc export):
 ```
-MONGO_URI=mongodb://admin:123456@localhost:27017/electronics_shop?authSource=admin
+MONGO_URI=mongodb://<user>:<pass>@localhost:27017/electronics_shop?authSource=admin
 PORT=3000
-JWT_SECRET=change-me
+JWT_SECRET=<strong-random-secret>
 ```
+
+## Bảo mật đã bật
+- Bắt buộc thiết lập `MONGO_URI` và `JWT_SECRET` qua biến môi trường; thiếu sẽ không khởi động.
+- HTTP hardening: `helmet`, CORS (origin động, cho phép credentials), giới hạn tốc độ 100 request/phút qua `@nestjs/throttler`.
+- ValidationPipe bật `whitelist`, `forbidNonWhitelisted`, chuyển đổi kiểu; mật khẩu tối thiểu 8 ký tự; đăng ký không nhận trường `role`.
+- Auth: JWT guard + Roles guard; login trả về user đã được ẩn `passwordHashed`; JWT validate kiểm tra user còn tồn tại.
+- Phân quyền/ownership: users/products/vouchers/transactions/inventory-movements/shipments và thao tác cập nhật/xóa review yêu cầu `admin`; carts/orders/chat chỉ truy cập dữ liệu của chính user (admin bỏ qua kiểm tra).
 
 ## Cài đặt & chạy
 ```bash

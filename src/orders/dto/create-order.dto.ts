@@ -86,9 +86,6 @@ export class CreateOrderDto {
   @IsString()
   code: string;
 
-  @IsMongoId()
-  userId: string;
-
   @IsOptional()
   @ValidateNested()
   @Type(() => OrderStatusDto)

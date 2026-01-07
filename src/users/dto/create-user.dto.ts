@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsEmail, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AddressDto } from './address.dto';
 
@@ -9,13 +9,9 @@ export class CreateUserDto {
   @IsEmail()
   email: string;
 
-  @IsOptional()
   @IsString()
-  password?: string;
-
-  @IsOptional()
-  @IsString()
-  passwordHashed?: string;
+  @MinLength(8)
+  password: string;
 
   @IsOptional()
   @IsString()

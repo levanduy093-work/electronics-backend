@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { JwtPayload } from '../common/types/jwt-payload';
 import { CreateCartDto } from './dto/create-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
 import { Cart, CartDocument } from './schemas/cart.schema';
@@ -12,10 +13,10 @@ export class CartsService {
     private readonly cartModel: Model<CartDocument>,
   ) {}
 
-  async create(data: CreateCartDto) {
+  async create(data: CreateCartDto, user: JwtPayload) {
     const created = await this.cartModel.create({
       ...data,
-      userId: new Types.ObjectId(data.userId),
+      userId: new Types.ObjectId(user.sub),
       voucher: data.voucher ? new Types.ObjectId(data.voucher) : undefined,
       items: data.items?.map((item) => ({
         ...item,
@@ -25,20 +26,25 @@ export class CartsService {
     return this.strip(created.toObject());
   }
 
-  async findAll() {
-    const docs = await this.cartModel.find().lean();
+  async findAll(user: JwtPayload) {
+    const filter = user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    const docs = await this.cartModel.find(filter).lean();
     return docs.map(this.strip);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: JwtPayload) {
     const doc = await this.cartModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Cart not found');
+    this.ensureOwnerOrAdmin(doc.userId, user);
     return this.strip(doc);
   }
 
-  async update(id: string, data: UpdateCartDto) {
+  async update(id: string, data: UpdateCartDto, user: JwtPayload) {
+    const existing = await this.cartModel.findById(id).lean();
+    if (!existing) throw new NotFoundException('Cart not found');
+    this.ensureOwnerOrAdmin(existing.userId, user);
+
     const mapped: any = { ...data };
-    if (data.userId) mapped.userId = new Types.ObjectId(data.userId);
     if (data.voucher) mapped.voucher = new Types.ObjectId(data.voucher);
     if (data.items) {
       mapped.items = data.items.map((item) => ({
@@ -54,10 +60,19 @@ export class CartsService {
     return this.strip(doc);
   }
 
-  async remove(id: string) {
-    const doc = await this.cartModel.findByIdAndDelete(id).lean();
+  async remove(id: string, user: JwtPayload) {
+    const doc = await this.cartModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Cart not found');
+    this.ensureOwnerOrAdmin(doc.userId, user);
+    await this.cartModel.findByIdAndDelete(id).lean();
     return this.strip(doc);
+  }
+
+  private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {
+    if (user.role === 'admin') return;
+    if (!ownerId || ownerId.toString() !== user.sub) {
+      throw new ForbiddenException('Access denied');
+    }
   }
 
   private strip = (doc: Partial<Cart>) => {

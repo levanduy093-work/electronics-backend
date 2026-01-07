@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { JwtPayload } from '../common/types/jwt-payload';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { Review, ReviewDocument } from './schemas/review.schema';
@@ -12,9 +13,10 @@ export class ReviewsService {
     private readonly reviewModel: Model<ReviewDocument>,
   ) {}
 
-  async create(data: CreateReviewDto) {
+  async create(data: CreateReviewDto, user: JwtPayload) {
     const created = await this.reviewModel.create({
       ...data,
+      userId: new Types.ObjectId(user.sub),
       productId: new Types.ObjectId(data.productId),
     });
     return this.strip(created.toObject());

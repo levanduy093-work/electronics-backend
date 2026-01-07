@@ -25,7 +25,6 @@ export class AuthService {
       email: dto.email,
       password: dto.password,
       avatar: dto.avatar,
-      role: dto.role,
       address: dto.address,
     });
     const token = this.signToken(user._id?.toString() ?? '', user.email, user.role);
@@ -42,7 +41,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     const token = this.signToken(user._id?.toString() ?? '', user.email, user.role);
-    return { user, accessToken: token };
+    const { passwordHashed, __v, ...safeUser } = user as any;
+    return { user: safeUser, accessToken: token };
   }
 
   private signToken(userId: string, email: string, role?: string) {

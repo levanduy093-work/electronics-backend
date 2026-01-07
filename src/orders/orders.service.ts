@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { JwtPayload } from '../common/types/jwt-payload';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
@@ -12,25 +13,31 @@ export class OrdersService {
     private readonly orderModel: Model<OrderDocument>,
   ) {}
 
-  async create(data: CreateOrderDto) {
-    const payload = this.mapDto(data);
+  async create(data: CreateOrderDto, user: JwtPayload) {
+    const payload = this.mapDto(data, user.sub);
     const created = await this.orderModel.create(payload);
     return this.strip(created.toObject());
   }
 
-  async findAll() {
-    const docs = await this.orderModel.find().lean();
+  async findAll(user: JwtPayload) {
+    const filter = user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    const docs = await this.orderModel.find(filter).lean();
     return docs.map(this.strip);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: JwtPayload) {
     const doc = await this.orderModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Order not found');
+    this.ensureOwnerOrAdmin(doc.userId, user);
     return this.strip(doc);
   }
 
-  async update(id: string, data: UpdateOrderDto) {
-    const payload = this.mapDto(data);
+  async update(id: string, data: UpdateOrderDto, user: JwtPayload) {
+    const existing = await this.orderModel.findById(id).lean();
+    if (!existing) throw new NotFoundException('Order not found');
+    this.ensureOwnerOrAdmin(existing.userId, user);
+
+    const payload = this.mapDto(data, existing.userId?.toString());
     const doc = await this.orderModel
       .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
@@ -38,15 +45,17 @@ export class OrdersService {
     return this.strip(doc);
   }
 
-  async remove(id: string) {
-    const doc = await this.orderModel.findByIdAndDelete(id).lean();
+  async remove(id: string, user: JwtPayload) {
+    const doc = await this.orderModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Order not found');
+    this.ensureOwnerOrAdmin(doc.userId, user);
+    await this.orderModel.findByIdAndDelete(id).lean();
     return this.strip(doc);
   }
 
-  private mapDto(data: Partial<CreateOrderDto>) {
+  private mapDto(data: Partial<CreateOrderDto>, userId?: string) {
     const mapped: any = { ...data };
-    if (data.userId) mapped.userId = new Types.ObjectId(data.userId);
+    if (userId) mapped.userId = new Types.ObjectId(userId);
     if (data.voucher) mapped.voucher = new Types.ObjectId(data.voucher);
     if (data.items) {
       mapped.items = data.items.map((item) => ({
@@ -64,6 +73,13 @@ export class OrdersService {
       };
     }
     return mapped;
+  }
+
+  private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {
+    if (user.role === 'admin') return;
+    if (!ownerId || ownerId.toString() !== user.sub) {
+      throw new ForbiddenException('Access denied');
+    }
   }
 
   private strip = (doc: Partial<Order>) => {

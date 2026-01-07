@@ -1,22 +1,6 @@
-import { IsArray, IsMongoId, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
-
-class ReviewUserDto {
-  @IsOptional()
-  @IsString()
-  avatar?: string;
-
-  @IsOptional()
-  @IsString()
-  name?: string;
-}
+import { IsArray, IsMongoId, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateReviewDto {
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ReviewUserDto)
-  user?: ReviewUserDto;
-
   @IsMongoId()
   productId: string;
 

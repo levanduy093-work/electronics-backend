@@ -1,12 +1,15 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
 import { UpdateInventoryMovementDto } from './dto/update-inventory-movement.dto';
 import { InventoryMovementsService } from './inventory-movements.service';
 
 @Controller('inventory-movements')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin')
 export class InventoryMovementsController {
   constructor(private readonly movementsService: InventoryMovementsService) {}
 
