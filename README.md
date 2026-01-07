@@ -10,12 +10,15 @@ Backend NestJS cho cửa hàng linh kiện điện tử. Kết nối MongoDB, t�
 - `src/config`: Đặt cấu hình mở rộng (nếu thêm).
 
 ## Cấu hình môi trường
-App dùng `@nestjs/config`. Thiết lập biến môi trường (tạo `.env` hoặc export):
+App dùng `@nestjs/config` + Joi validate. Tạo `.env` (hoặc export) với các biến bắt buộc:
 ```
 MONGO_URI=mongodb://<user>:<pass>@localhost:27017/electronics_shop?authSource=admin
+JWT_SECRET=<random-32+ chars>       # ký access token 30 phút
+REFRESH_SECRET=<random-32+ chars>   # ký refresh token 30 ngày, khác với JWT_SECRET
 PORT=3000
-JWT_SECRET=<strong-random-secret>
+CORS_ORIGINS=http://localhost:3000   # danh sách origin, phân tách dấu phẩy (ví dụ thêm https://admin.yourdomain.com)
 ```
+Không commit `.env`. Secrets cần đủ dài/ngẫu nhiên; có thể tạo bằng `openssl rand -hex 32`.
 
 ## Bảo mật đã bật
 - Bắt buộc thiết lập `MONGO_URI` và `JWT_SECRET` qua biến môi trường; thiếu sẽ không khởi động.
@@ -23,6 +26,8 @@ JWT_SECRET=<strong-random-secret>
 - ValidationPipe bật `whitelist`, `forbidNonWhitelisted`, chuyển đổi kiểu; mật khẩu tối thiểu 8 ký tự; đăng ký không nhận trường `role`.
 - Auth: JWT guard + Roles guard; login trả về user đã được ẩn `passwordHashed`; JWT validate kiểm tra user còn tồn tại.
 - Phân quyền/ownership: users/products/vouchers/transactions/inventory-movements/shipments và thao tác cập nhật/xóa review yêu cầu `admin`; carts/orders/chat chỉ truy cập dữ liệu của chính user (admin bỏ qua kiểm tra).
+- Auth: Access token TTL 30 phút; refresh token TTL 30 ngày. Endpoint làm mới token: `POST /auth/refresh` (body: `{ "refreshToken": "<token>" }`). Login/register trả về `{ user, accessToken, refreshToken }`.
+- Review ràng buộc user: `userId` lấy từ JWT, không cho client tự đính kèm tên/ảnh.
 
 ## Cài đặt & chạy
 ```bash
