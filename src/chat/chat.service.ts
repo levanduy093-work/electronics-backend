@@ -69,6 +69,10 @@ export class ChatService {
   private mapMessage = (msg: ChatMessageDto) => ({
     ...msg,
     time: msg.time ? new Date(msg.time) : undefined,
+    content: {
+      text: msg.content?.text,
+      images: msg.content?.images ?? [],
+    },
   });
 
   private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {

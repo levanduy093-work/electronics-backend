@@ -27,6 +27,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
       validationSchema: Joi.object({
         MONGO_URI: Joi.string().uri({ scheme: ['mongodb'] }).required(),
         JWT_SECRET: Joi.string().min(32).required(),
+        REFRESH_SECRET: Joi.string().min(32).required(),
         PORT: Joi.number().default(3000),
         CORS_ORIGINS: Joi.string().optional(),
       }),

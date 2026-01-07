@@ -23,7 +23,7 @@ import { JwtStrategy } from '../common/strategies/jwt.strategy';
           }
           return secret;
         })(),
-        signOptions: { expiresIn: '7d' },
+        signOptions: { expiresIn: '30m' },
       }),
     }),
   ],

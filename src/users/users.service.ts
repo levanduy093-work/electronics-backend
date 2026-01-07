@@ -66,7 +66,10 @@ export class UsersService {
     if (address.isDefault) {
       user.address = user.address.map((addr) => ({ ...addr, isDefault: false }));
     }
-    user.address.push(address);
+    user.address.push({
+      ...address,
+      isDefault: address.isDefault ?? false,
+    });
     await user.save();
     return this.toSafeUser(user.toObject());
   }
