@@ -17,8 +17,21 @@ JWT_SECRET=<random-32+ chars>       # ký access token 30 phút
 REFRESH_SECRET=<random-32+ chars>   # ký refresh token 30 ngày, khác với JWT_SECRET
 PORT=3000
 CORS_ORIGINS=http://localhost:3000   # danh sách origin, phân tách dấu phẩy (ví dụ thêm https://admin.yourdomain.com)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=<smtp-username>
+SMTP_PASS=<smtp-password-or-app-password>
+SMTP_FROM="Electronics Shop <no-reply@yourdomain.com>"
+SMTP_SECURE=false                    # true nếu dùng cổng 465
+OTP_TTL_SECONDS=600                  # mặc định 10 phút
+OTP_MAX_ATTEMPTS=5                   # khóa OTP nếu nhập sai quá số lần này
 ```
 Không commit `.env`. Secrets cần đủ dài/ngẫu nhiên; có thể tạo bằng `openssl rand -hex 32`.
+
+### Luồng đăng nhập OTP (email)
+- Gửi OTP: `POST /auth/send-otp` body `{"email":"<email>","password":"<password>"}` — kiểm tra mật khẩu rồi gửi mã 6 số qua email, TTL mặc định 10 phút.
+- Xác minh OTP: `POST /auth/verify-otp` body `{"email":"<email>","code":"123456"}` — trả về `{ user, accessToken, refreshToken }`.
+- Giới hạn: tối đa 5 lần nhập sai (config `OTP_MAX_ATTEMPTS`), có throttle per-endpoint.
 
 ## Bảo mật đã bật
 - Bắt buộc thiết lập `MONGO_URI` và `JWT_SECRET` qua biến môi trường; thiếu sẽ không khởi động.
@@ -46,6 +59,8 @@ Base URL: `http://localhost:${PORT:-3000}`
 - **Auth**
   - `POST /auth/register` (public) — name, email, password, avatar?, role?, address?
   - `POST /auth/login` (public) — email, password → `{ accessToken, user }`
+  - `POST /auth/send-otp` (public) — email, password → gửi OTP 6 số qua email (TTL mặc định 10 phút, tối đa 5 lần nhập sai)
+  - `POST /auth/verify-otp` (public) — email, code → `{ accessToken, refreshToken, user }` (đăng nhập bằng OTP sau khi đã xác thực email + password ở bước gửi OTP)
   - Với các API còn lại: gửi header `Authorization: Bearer <accessToken>`
 
 - **Users**

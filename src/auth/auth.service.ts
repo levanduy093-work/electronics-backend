@@ -9,6 +9,10 @@ import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { OtpService } from './otp.service';
+import { MailService } from './mail.service';
 
 @Injectable()
 export class AuthService {
@@ -16,6 +20,8 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly otpService: OtpService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -46,8 +52,7 @@ export class AuthService {
     }
     const userId = (user as any)._id?.toString?.() ?? '';
     const tokens = this.signTokens(userId, user.email ?? '', user.role);
-    const { passwordHashed, __v, ...safeUser } = user as any;
-    return { user: safeUser, ...tokens };
+    return { user: this.toSafeUser(user), ...tokens };
   }
 
   async refresh(dto: RefreshTokenDto) {
@@ -58,8 +63,34 @@ export class AuthService {
     }
     const userId = (user as any)._id?.toString?.() ?? '';
     const tokens = this.signTokens(userId, user.email ?? '', user.role);
-    const { passwordHashed, __v, ...safeUser } = user as any;
-    return { user: safeUser, ...tokens };
+    return { user: this.toSafeUser(user), ...tokens };
+  }
+
+  async sendLoginOtp(dto: SendOtpDto) {
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const isValid = await this.usersService.comparePassword(user, dto.password);
+    if (!isValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const { code, expiresAt } = await this.otpService.createCode(dto.email, 'login');
+    await this.mailService.sendOtp(dto.email, code, expiresAt);
+
+    return { message: 'OTP has been sent to your email' };
+  }
+
+  async verifyLoginOtp(dto: VerifyOtpDto) {
+    await this.otpService.verifyCode(dto.email, 'login', dto.code);
+    const user = await this.usersService.findByEmail(dto.email);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    const userId = (user as any)._id?.toString?.() ?? '';
+    const tokens = this.signTokens(userId, user.email ?? '', user.role);
+    return { user: this.toSafeUser(user), ...tokens };
   }
 
   private signTokens(userId: string, email: string, role?: string) {
@@ -86,5 +117,10 @@ export class AuthService {
     } catch (_err) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  private toSafeUser(user: any) {
+    const { passwordHashed, __v, ...safeUser } = user as any;
+    return safeUser;
   }
 }
