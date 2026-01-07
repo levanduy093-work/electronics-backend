@@ -13,7 +13,13 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { OtpService } from './otp.service';
 import { MailService } from './mail.service';
 import { RegisterOtpDto } from './dto/register-otp.dto';
+import { SendResetOtpDto } from './dto/send-reset-otp.dto';
+import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SendChangePasswordOtpDto } from './dto/send-change-password-otp.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import * as bcrypt from 'bcrypt';
+import { JwtPayload } from '../common/types/jwt-payload';
 
 @Injectable()
 export class AuthService {
@@ -134,5 +140,89 @@ export class AuthService {
   private toSafeUser(user: any) {
     const { passwordHashed, __v, ...safeUser } = user as any;
     return safeUser;
+  }
+
+  async sendResetOtp(dto: SendResetOtpDto) {
+    const user = await this.usersService.findByEmail(dto.email.toLowerCase());
+    if (!user) {
+      throw new UnauthorizedException('Email không tồn tại');
+    }
+    const { code, expiresAt } = await this.otpService.createCode(dto.email, 'reset-password');
+    await this.mailService.sendOtp(dto.email, code, expiresAt);
+    return { message: 'Đã gửi mã xác nhận đến email của bạn' };
+  }
+
+  async verifyResetOtp(dto: VerifyResetOtpDto) {
+    await this.otpService.verifyCode(dto.email, 'reset-password', dto.code);
+    const resetSecret = this.configService.get<string>('JWT_SECRET');
+    if (!resetSecret) {
+      throw new Error('JWT_SECRET must be provided');
+    }
+    const resetToken = this.jwtService.sign(
+      { email: dto.email.toLowerCase(), purpose: 'reset-password' },
+      { secret: resetSecret, expiresIn: '15m' },
+    );
+    return { resetToken, message: 'Mã xác nhận hợp lệ' };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const resetSecret = this.configService.get<string>('JWT_SECRET');
+    if (!resetSecret) {
+      throw new Error('JWT_SECRET must be provided');
+    }
+    let payload: { email: string; purpose: string };
+    try {
+      payload = await this.jwtService.verifyAsync(dto.resetToken, { secret: resetSecret });
+    } catch (_err) {
+      throw new UnauthorizedException('Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+    }
+    if (!payload || payload.email !== dto.email.toLowerCase() || payload.purpose !== 'reset-password') {
+      throw new UnauthorizedException('Token đặt lại mật khẩu không hợp lệ');
+    }
+    const user = await this.usersService.findByEmail(dto.email.toLowerCase());
+    if (!user) {
+      throw new UnauthorizedException('Email không tồn tại');
+    }
+    await this.usersService.updatePasswordByEmail(dto.email.toLowerCase(), dto.newPassword);
+    return { message: 'Đổi mật khẩu thành công' };
+  }
+
+  async sendChangePasswordOtp(user: JwtPayload, dto: SendChangePasswordOtpDto) {
+    if (!user?.email) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    const existing = await this.usersService.findByEmail(user.email.toLowerCase());
+    if (!existing) {
+      throw new UnauthorizedException('User not found');
+    }
+    const isValid = await this.usersService.comparePassword(existing, dto.currentPassword);
+    if (!isValid) {
+      throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
+    }
+    const { code, expiresAt } = await this.otpService.createCode(user.email, 'change-password', {
+      userId: user.sub,
+    });
+    await this.mailService.sendOtp(user.email, code, expiresAt);
+    return { message: 'Đã gửi mã xác nhận đến email của bạn' };
+  }
+
+  async changePassword(user: JwtPayload, dto: ChangePasswordDto) {
+    if (!user?.email) {
+      throw new UnauthorizedException('User not authenticated');
+    }
+    const existing = await this.usersService.findByEmail(user.email.toLowerCase());
+    if (!existing) {
+      throw new UnauthorizedException('User not found');
+    }
+    const isValid = await this.usersService.comparePassword(existing, dto.currentPassword);
+    if (!isValid) {
+      throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
+    }
+    const payload = await this.otpService.verifyCode(user.email, 'change-password', dto.code);
+    if (payload?.userId && payload.userId !== user.sub) {
+      throw new UnauthorizedException('Mã OTP không hợp lệ');
+    }
+    await this.usersService.updatePasswordByEmail(user.email.toLowerCase(), dto.newPassword);
+    return { message: 'Đổi mật khẩu thành công' };
   }
 }

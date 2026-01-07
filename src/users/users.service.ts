@@ -117,6 +117,16 @@ export class UsersService {
     return bcrypt.compare(plain, user.passwordHashed);
   }
 
+  async updatePasswordByEmail(email: string, newPassword: string) {
+    const user = await this.userModel.findOne({ email }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    user.passwordHashed = await this.hashPassword(newPassword);
+    await user.save();
+    return this.toSafeUser(user.toObject());
+  }
+
   private async hashPassword(password?: string) {
     if (password) {
       return bcrypt.hash(password, 10);
