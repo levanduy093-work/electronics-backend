@@ -45,6 +45,28 @@ export class UsersController {
     return this.usersService.setDefaultAddress(user.sub, Number(index));
   }
 
+  // Favorites
+  @Get('me/favorites')
+  getMyFavorites(@CurrentUser() user: JwtPayload) {
+    return this.usersService.getFavorites(user.sub);
+  }
+
+  @Post('me/favorites/:productId')
+  addFavorite(
+    @CurrentUser() user: JwtPayload,
+    @Param('productId', ParseObjectIdPipe) productId: string,
+  ) {
+    return this.usersService.addFavorite(user.sub, productId);
+  }
+
+  @Delete('me/favorites/:productId')
+  removeFavorite(
+    @CurrentUser() user: JwtPayload,
+    @Param('productId', ParseObjectIdPipe) productId: string,
+  ) {
+    return this.usersService.removeFavorite(user.sub, productId);
+  }
+
   // Admin endpoints
   @Roles('admin')
   @Post()

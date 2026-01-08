@@ -50,6 +50,9 @@ export class User {
 
   @Prop({ type: [MongooseSchema.Types.ObjectId], ref: 'vouchers', default: [] })
   voucher: Types.ObjectId[];
+
+  @Prop({ type: [MongooseSchema.Types.ObjectId], ref: 'products', default: [] })
+  favorites: Types.ObjectId[];
 }
 
 export type UserDocument = HydratedDocument<User>;

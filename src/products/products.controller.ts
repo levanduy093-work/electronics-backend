@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
@@ -19,11 +20,13 @@ export class ProductsController {
   }
 
   @Get()
+  @Public()
   findAll() {
     return this.productsService.findAll();
   }
 
   @Get(':id')
+  @Public()
   findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.productsService.findOne(id);
   }

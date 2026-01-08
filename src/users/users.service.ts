@@ -6,12 +6,15 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddressDto } from './dto/address.dto';
 import { User, UserDocument } from './schemas/user.schema';
+import { Product } from '../products/schemas/product.schema';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<Product>,
   ) {}
 
   async create(data: CreateUserDto) {
@@ -141,6 +144,40 @@ export class UsersService {
     return user.address || [];
   }
 
+  async getFavorites(userId: string) {
+    const user = await this.userModel
+      .findById(userId)
+      .populate({ path: 'favorites', model: this.productModel })
+      .lean();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const favorites = (user.favorites as any[]) || [];
+    return favorites.map(this.stripProduct);
+  }
+
+  async addFavorite(userId: string, productId: string) {
+    const productExists = await this.productModel.exists({ _id: productId });
+    if (!productExists) {
+      throw new NotFoundException('Product not found');
+    }
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $addToSet: { favorites: productId } },
+      { upsert: false },
+    );
+    return this.getFavorites(userId);
+  }
+
+  async removeFavorite(userId: string, productId: string) {
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $pull: { favorites: productId } },
+      { upsert: false },
+    );
+    return this.getFavorites(userId);
+  }
+
   private toSafeUser = (user: Partial<User>) => {
     // Hide password hash when returning to clients.
     const { passwordHashed, __v, ...rest } = user as Partial<User & { __v?: number }>;
@@ -171,6 +208,12 @@ export class UsersService {
     await user.save();
     return this.toSafeUser(user.toObject());
   }
+
+  private stripProduct = (product: any) => {
+    if (!product) return product;
+    const { __v, ...rest } = product as any;
+    return rest;
+  };
 
   private async hashPassword(password?: string) {
     if (password) {
