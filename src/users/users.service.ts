@@ -96,6 +96,51 @@ export class UsersService {
     return this.toSafeUser(user.toObject());
   }
 
+  async updateAddress(id: string, index: number, address: AddressDto) {
+    const user = await this.userModel.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (index < 0 || index >= user.address.length) {
+      throw new NotFoundException('Address not found');
+    }
+
+    if (address.isDefault) {
+      user.address = user.address.map((addr, idx) => ({
+        ...addr,
+        isDefault: idx === index,
+      }));
+    }
+    user.address[index] = {
+      ...address,
+      isDefault: address.isDefault ?? user.address[index].isDefault,
+    };
+    await user.save();
+    return this.toSafeUser(user.toObject());
+  }
+
+  async deleteAddress(id: string, index: number) {
+    const user = await this.userModel.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (index < 0 || index >= user.address.length) {
+      throw new NotFoundException('Address not found');
+    }
+
+    user.address.splice(index, 1);
+    await user.save();
+    return this.toSafeUser(user.toObject());
+  }
+
+  async getUserAddresses(id: string) {
+    const user = await this.userModel.findById(id).lean();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return user.address || [];
+  }
+
   private toSafeUser = (user: Partial<User>) => {
     // Hide password hash when returning to clients.
     const { passwordHashed, __v, ...rest } = user as Partial<User & { __v?: number }>;
