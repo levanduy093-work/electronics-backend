@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -20,8 +21,15 @@ export class ReviewsController {
   }
 
   @Get()
+  @Roles('admin')
   findAll() {
     return this.reviewsService.findAll();
+  }
+
+  @Get('product/:productId')
+  @Public()
+  findByProduct(@Param('productId', ParseObjectIdPipe) productId: string) {
+    return this.reviewsService.findByProduct(productId);
   }
 
   @Get(':id')
