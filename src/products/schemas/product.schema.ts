@@ -2,24 +2,6 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 
 @Schema({ _id: false })
-class Specs {
-  @Prop()
-  resistance?: string;
-
-  @Prop()
-  tolerance?: string;
-
-  @Prop()
-  power?: string;
-
-  @Prop()
-  scope?: string;
-
-  @Prop()
-  voltage?: string;
-}
-
-@Schema({ _id: false })
 class Price {
   @Prop({ required: true })
   originalPrice: number;
@@ -42,8 +24,8 @@ export class Product {
   @Prop({ type: [String], default: [] })
   images: string[];
 
-  @Prop({ type: Specs })
-  specs?: Specs;
+  @Prop({ type: Map, of: String, default: {} })
+  specs?: Record<string, string>;
 
   @Prop({ type: Price, required: true })
   price: Price;
@@ -68,6 +50,5 @@ export class Product {
 }
 
 export type ProductDocument = HydratedDocument<Product>;
-export const SpecsSchema = SchemaFactory.createForClass(Specs);
 export const PriceSchema = SchemaFactory.createForClass(Price);
 export const ProductSchema = SchemaFactory.createForClass(Product);

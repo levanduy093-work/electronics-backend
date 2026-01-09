@@ -3,31 +3,10 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsObject,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-
-class SpecsDto {
-  @IsOptional()
-  @IsString()
-  resistance?: string;
-
-  @IsOptional()
-  @IsString()
-  tolerance?: string;
-
-  @IsOptional()
-  @IsString()
-  power?: string;
-
-  @IsOptional()
-  @IsString()
-  scope?: string;
-
-  @IsOptional()
-  @IsString()
-  voltage?: string;
-}
+import { Type, Transform } from 'class-transformer';
 
 class PriceDto {
   @IsNumber()
@@ -55,9 +34,16 @@ export class CreateProductDto {
   images?: string[];
 
   @IsOptional()
-  @ValidateNested()
-  @Type(() => SpecsDto)
-  specs?: SpecsDto;
+  @IsObject()
+  @Transform(({ value }) => {
+    if (!value || typeof value !== 'object') return undefined;
+    // Normalize spec values to string
+    const entries = Object.entries(value as Record<string, any>)
+      .map(([k, v]) => [k, v === null || v === undefined ? '' : String(v).trim()])
+      .filter(([k, v]) => k && v);
+    return Object.fromEntries(entries);
+  })
+  specs?: Record<string, string>;
 
   @ValidateNested()
   @Type(() => PriceDto)
