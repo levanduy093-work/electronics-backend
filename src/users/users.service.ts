@@ -57,6 +57,21 @@ export class UsersService {
     return this.toSafeUser(updated);
   }
 
+  async updateSelf(id: string, data: UpdateUserDto) {
+    const allowed: Partial<UpdateUserDto> = {};
+    if (data.name !== undefined) allowed.name = data.name;
+    if (data.avatar !== undefined) allowed.avatar = data.avatar;
+    if (data.email !== undefined) allowed.email = data.email;
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(id, allowed, { new: true, lean: true })
+      .exec();
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    return this.toSafeUser(updated);
+  }
+
   async remove(id: string) {
     const deleted = await this.userModel.findByIdAndDelete(id).lean();
     if (!deleted) {

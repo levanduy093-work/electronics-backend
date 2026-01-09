@@ -21,6 +21,11 @@ export class UsersController {
     return this.usersService.getUserAddresses(user.sub);
   }
 
+  @Patch('me')
+  updateMyProfile(@CurrentUser() user: JwtPayload, @Body() dto: UpdateUserDto) {
+    return this.usersService.updateSelf(user.sub, dto);
+  }
+
   @Post('me/addresses')
   addMyAddress(@CurrentUser() user: JwtPayload, @Body() address: AddressDto) {
     return this.usersService.addAddress(user.sub, address);
