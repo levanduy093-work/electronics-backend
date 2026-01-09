@@ -8,6 +8,7 @@ import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { CartsModule } from './carts/carts.module';
 import { ChatModule } from './chat/chat.module';
+import { EventsModule } from './events/events.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { HealthModule } from './health/health.module';
@@ -25,7 +26,8 @@ import { VouchersModule } from './vouchers/vouchers.module';
     ConfigModule.forRoot({
       isGlobal: true,
       validationSchema: Joi.object({
-        MONGO_URI: Joi.string().uri({ scheme: ['mongodb'] }).required(),
+        // Hỗ trợ cả mongodb và mongodb+srv (Atlas)
+        MONGO_URI: Joi.string().uri({ scheme: ['mongodb', 'mongodb+srv'] }).required(),
         JWT_SECRET: Joi.string().min(32).required(),
         REFRESH_SECRET: Joi.string().min(32).required(),
         PORT: Joi.number().default(3000),
@@ -69,6 +71,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
     ChatModule,
     AiModule,
     HealthModule,
+    EventsModule,
   ],
   providers: [
     {
