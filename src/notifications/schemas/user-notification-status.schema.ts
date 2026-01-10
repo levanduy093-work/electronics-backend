@@ -18,6 +18,9 @@ export class UserNotificationStatus {
 
   @Prop()
   read_at?: Date;
+
+  @Prop({ expires: 0 })
+  expires_at?: Date;
 }
 
 export type UserNotificationStatusDocument = HydratedDocument<UserNotificationStatus>;

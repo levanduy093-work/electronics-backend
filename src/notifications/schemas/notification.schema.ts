@@ -22,7 +22,7 @@ export class Notification {
   @Prop()
   send_at?: Date;
 
-  @Prop()
+  @Prop({ expires: 0 })
   expires_at?: Date;
 
   @Prop({ type: Types.ObjectId, ref: 'users' })

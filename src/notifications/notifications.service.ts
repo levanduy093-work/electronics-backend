@@ -40,6 +40,7 @@ export class NotificationsService {
 
   async findForUser(userId: string): Promise<NotificationView[]> {
     const userObjectId = new Types.ObjectId(userId);
+    const now = new Date();
     return this.userNotificationStatusModel
       .aggregate<NotificationView>([
         { $match: { user_id: userObjectId } },
@@ -52,6 +53,14 @@ export class NotificationsService {
           },
         },
         { $unwind: '$notification' },
+        {
+          $match: {
+            $or: [
+              { 'notification.expires_at': { $exists: false } },
+              { 'notification.expires_at': { $gt: now } },
+            ],
+          },
+        },
         {
           $addFields: {
             effectiveSendAt: { $ifNull: ['$notification.send_at', '$notification.createdAt'] },
@@ -181,7 +190,7 @@ export class NotificationsService {
     });
 
     const target = dto.target || { scope: 'all_users' };
-    await this.applyTargetsAndStatuses(created._id, target, sendAt);
+    await this.applyTargetsAndStatuses(created._id, target, sendAt, expiresAt);
 
     return this.adminFindOne(created._id.toString());
   }
@@ -220,7 +229,8 @@ export class NotificationsService {
       await this.notificationTargetModel.deleteMany({ notification_id: notification._id });
       await this.userNotificationStatusModel.deleteMany({ notification_id: notification._id });
       const sendAt = dto.sendAt ? new Date(dto.sendAt) : notification.send_at;
-      await this.applyTargetsAndStatuses(notification._id, dto.target, sendAt);
+      const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : notification.expires_at;
+      await this.applyTargetsAndStatuses(notification._id, dto.target, sendAt, expiresAt);
     }
 
     return this.adminFindOne(id);
@@ -239,6 +249,7 @@ export class NotificationsService {
     notificationId: Types.ObjectId,
     target: { scope: 'all_users' | 'user'; emails?: string[]; userIds?: string[] },
     sendAt?: Date,
+    expiresAt?: Date,
   ) {
     if (target.scope === 'all_users') {
       await this.notificationTargetModel.create({
@@ -253,6 +264,7 @@ export class NotificationsService {
           user_id: u._id,
           is_read: false,
           delivered_at: sendAt || new Date(),
+          expires_at: expiresAt,
         }));
         await this.userNotificationStatusModel.insertMany(statuses);
       }
@@ -294,6 +306,7 @@ export class NotificationsService {
         user_id: uid,
         is_read: false,
         delivered_at: sendAt || new Date(),
+        expires_at: expiresAt,
       })),
     );
   }
