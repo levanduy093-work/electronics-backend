@@ -9,11 +9,17 @@ export class Voucher {
   @Prop()
   description?: string;
 
-  @Prop({ default: 'fixed', enum: ['fixed', 'shipping'] })
-  type: 'fixed' | 'shipping';
+  @Prop({ default: 'fixed', enum: ['fixed', 'shipping', 'percentage'] })
+  type: 'fixed' | 'shipping' | 'percentage';
 
-  @Prop({ required: true })
+  @Prop()
   discountPrice: number;
+
+  @Prop()
+  discountRate?: number;
+
+  @Prop()
+  maxDiscountPrice?: number;
 
   @Prop({ required: true })
   minTotal: number;

@@ -9,11 +9,20 @@ export class CreateVoucherDto {
   description?: string;
 
   @IsOptional()
-  @IsIn(['fixed', 'shipping'])
-  type?: 'fixed' | 'shipping';
+  @IsIn(['fixed', 'shipping', 'percentage'])
+  type?: 'fixed' | 'shipping' | 'percentage';
 
+  @IsOptional()
   @IsNumber()
-  discountPrice: number;
+  discountPrice?: number;
+
+  @IsOptional()
+  @IsNumber()
+  discountRate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  maxDiscountPrice?: number;
 
   @IsNumber()
   minTotal: number;

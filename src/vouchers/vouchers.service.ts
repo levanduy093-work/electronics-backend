@@ -106,6 +106,9 @@ export class VouchersService {
     return {
       ...cleaned,
       type: cleaned.type || inferType(),
+      discountPrice: cleaned.discountPrice ?? 0,
+      discountRate: cleaned.discountRate,
+      maxDiscountPrice: cleaned.maxDiscountPrice,
     };
   };
 }
