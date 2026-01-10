@@ -9,6 +9,9 @@ export class Voucher {
   @Prop()
   description?: string;
 
+  @Prop({ default: 'fixed', enum: ['fixed', 'shipping'] })
+  type: 'fixed' | 'shipping';
+
   @Prop({ required: true })
   discountPrice: number;
 

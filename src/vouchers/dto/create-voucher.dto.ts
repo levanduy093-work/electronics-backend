@@ -1,4 +1,4 @@
-import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateVoucherDto {
   @IsString()
@@ -7,6 +7,10 @@ export class CreateVoucherDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsIn(['fixed', 'shipping'])
+  type?: 'fixed' | 'shipping';
 
   @IsNumber()
   discountPrice: number;
