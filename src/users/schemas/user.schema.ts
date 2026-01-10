@@ -28,6 +28,33 @@ class Address {
   isDefault: boolean;
 }
 
+@Schema({ _id: false })
+export class UserVoucher {
+  @Prop({ required: true })
+  code: string;
+
+  @Prop()
+  description?: string;
+
+  @Prop({ default: 'fixed', enum: ['fixed', 'shipping', 'percentage'] })
+  type: 'fixed' | 'shipping' | 'percentage';
+
+  @Prop()
+  discountPrice: number;
+
+  @Prop()
+  discountRate?: number;
+
+  @Prop()
+  maxDiscountPrice?: number;
+
+  @Prop({ required: true })
+  minTotal: number;
+
+  @Prop({ required: true })
+  expire: Date;
+}
+
 @Schema({ collection: 'users', timestamps: true })
 export class User {
   @Prop({ required: true })
@@ -48,8 +75,8 @@ export class User {
   @Prop({ type: [Address], default: [] })
   address: Address[];
 
-  @Prop({ type: [MongooseSchema.Types.ObjectId], ref: 'vouchers', default: [] })
-  voucher: Types.ObjectId[];
+  @Prop({ type: [UserVoucher], default: [] })
+  voucher: UserVoucher[];
 
   @Prop({ type: [MongooseSchema.Types.ObjectId], ref: 'products', default: [] })
   favorites: Types.ObjectId[];

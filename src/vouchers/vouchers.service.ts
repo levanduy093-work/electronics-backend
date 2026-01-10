@@ -13,7 +13,7 @@ export class VouchersService {
     private readonly voucherModel: Model<VoucherDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
-  ) {}
+  ) { }
 
   async create(data: CreateVoucherDto) {
     const created = await this.voucherModel.create({
@@ -41,28 +41,21 @@ export class VouchersService {
       this.userModel.findById(userId).select('voucher').lean(),
     ]);
 
-    const userVoucherIds = (user?.voucher || []).filter(Boolean);
-    const normalizedIds = userVoucherIds
-      .map((id) => `${id}`)
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-    const userVouchers = normalizedIds.length
-      ? await this.voucherModel
-          .find({
-            _id: { $in: normalizedIds },
-            expire: { $gte: now },
-          })
-          .lean()
-      : [];
+    const embeddedVouchers = (user?.voucher || []) as any[];
+    const activeEmbeddedVouchers = embeddedVouchers
+      .filter((v: any) => v.expire && new Date(v.expire) >= now)
+      .map((v: any) => ({ ...v, _id: v.code })); // Use code as _id for embedded vouchers
 
-    const merged = [...globalVouchers, ...userVouchers];
-    const seen = new Set<string>();
-    const unique = merged.filter((doc) => {
-      const id = `${doc._id}`;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
+    const merged = [...globalVouchers, ...activeEmbeddedVouchers];
+    const seenCodes = new Set<string>();
+    const unique: any[] = [];
+
+    for (const doc of merged) {
+      if (!seenCodes.has(doc.code)) {
+        seenCodes.add(doc.code);
+        unique.push(doc);
+      }
+    }
 
     return unique.map((doc) => this.stripWithDefaults(doc));
   }

@@ -13,7 +13,16 @@ import { UsersService } from './users.service';
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
+
+  @Roles('admin')
+  @Post(':id/vouchers')
+  addVoucher(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: import('../vouchers/dto/create-voucher.dto').CreateVoucherDto,
+  ) {
+    return this.usersService.addVoucher(id, dto);
+  }
 
   // User endpoints - users can manage their own addresses
   @Get('me/addresses')

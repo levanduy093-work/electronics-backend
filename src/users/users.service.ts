@@ -6,6 +6,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AddressDto } from './dto/address.dto';
 import { User, UserDocument } from './schemas/user.schema';
+import { CreateVoucherDto } from '../vouchers/dto/create-voucher.dto';
 import { Product } from '../products/schemas/product.schema';
 
 @Injectable()
@@ -15,7 +16,25 @@ export class UsersService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<Product>,
-  ) {}
+  ) { }
+
+  async addVoucher(id: string, voucherData: CreateVoucherDto) {
+    const user = await this.userModel.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const newVoucher = {
+      ...voucherData,
+      expire: new Date(voucherData.expire),
+      discountPrice: voucherData.discountPrice || 0,
+      minTotal: voucherData.minTotal || 0,
+    };
+    await this.userModel.updateOne(
+      { _id: id },
+      { $push: { voucher: newVoucher } }
+    );
+    return this.findOne(id);
+  }
 
   async create(data: CreateUserDto) {
     const passwordHash = await this.hashPassword(data.password);
