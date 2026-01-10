@@ -20,6 +20,7 @@ import { ShipmentsModule } from './shipments/shipments.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { UsersModule } from './users/users.module';
 import { VouchersModule } from './vouchers/vouchers.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
     OrdersModule,
     CartsModule,
     VouchersModule,
+    NotificationsModule,
     ReviewsModule,
     TransactionsModule,
     ShipmentsModule,
