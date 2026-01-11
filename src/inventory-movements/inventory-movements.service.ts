@@ -95,8 +95,30 @@ export class InventoryMovementsService {
   }
 
   private strip = (doc: Partial<InventoryMovement>) => {
-    const { __v, ...rest } = doc as Partial<InventoryMovement & { __v?: number }>;
-    return rest;
+    const { __v, ...rest } = doc as Partial<
+      InventoryMovement & {
+        __v?: number;
+        _id?: Types.ObjectId | string;
+        productId?: Types.ObjectId | string;
+        createdAt?: Date | string;
+        updatedAt?: Date | string;
+      }
+    >;
+
+    const stringifyId = (value?: Types.ObjectId | string) =>
+      value && typeof value !== 'string' && 'toString' in value
+        ? (value as Types.ObjectId).toString()
+        : value;
+    const normalizeDate = (value?: Date | string) =>
+      value ? new Date(value).toISOString() : undefined;
+
+    return {
+      ...rest,
+      _id: stringifyId(rest._id),
+      productId: stringifyId(rest.productId),
+      createdAt: normalizeDate(rest.createdAt ?? (doc as any).createdAt),
+      updatedAt: normalizeDate(rest.updatedAt ?? (doc as any).updatedAt),
+    };
   };
 
   private toDelta(type: string, quantity: number) {
