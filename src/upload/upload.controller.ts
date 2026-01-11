@@ -6,9 +6,17 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  Query,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+
+const sanitizeFolder = (value?: string) => {
+  if (!value) return undefined;
+  // Allow only alphanum, slash, dash, underscore to avoid traversal or special chars
+  const cleaned = value.replace(/[^a-zA-Z0-9/_-]/g, '').replace(/\/+/g, '/');
+  return cleaned || undefined;
+};
 
 @Controller('upload')
 export class UploadController {
@@ -26,7 +34,9 @@ export class UploadController {
       }),
     )
     file: Express.Multer.File,
+    @Query('folder') folder?: string,
   ) {
-    return this.cloudinaryService.uploadImage(file);
+    const safeFolder = sanitizeFolder(folder);
+    return this.cloudinaryService.uploadImage(file, safeFolder);
   }
 }

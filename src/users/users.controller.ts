@@ -54,7 +54,8 @@ export class UsersController {
     @UploadedFile() avatar?: Express.Multer.File,
   ) {
     if (avatar) {
-      const result = await this.cloudinaryService.uploadImage(avatar);
+      const folder = `electronics-shop/avatars/${user.sub}`;
+      const result = await this.cloudinaryService.uploadImage(avatar, folder);
       dto.avatar = result.secure_url;
     }
     return this.usersService.updateSelf(user.sub, dto);

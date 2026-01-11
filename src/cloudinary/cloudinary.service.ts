@@ -6,11 +6,18 @@ import * as streamifier from 'streamifier';
 export class CloudinaryService {
   async uploadImage(
     file: Express.Multer.File,
+    folder?: string,
   ): Promise<UploadApiResponse | UploadApiErrorResponse> {
+    const now = new Date();
+    const fallbackFolder = `electronics-shop/uploads/${now.getFullYear()}/${String(
+      now.getMonth() + 1,
+    ).padStart(2, '0')}`;
+    const safeFolder = folder?.trim() || fallbackFolder;
+
     return new Promise((resolve, reject) => {
       const upload = cloudinary.uploader.upload_stream(
         {
-          folder: 'electronics-shop',
+          folder: safeFolder,
         },
         (error, result) => {
           if (error) return reject(error);
