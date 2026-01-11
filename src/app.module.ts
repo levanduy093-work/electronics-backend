@@ -21,6 +21,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { UsersModule } from './users/users.module';
 import { VouchersModule } from './vouchers/vouchers.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -41,6 +42,11 @@ import { NotificationsModule } from './notifications/notifications.module';
         SMTP_SECURE: Joi.string().valid('true', 'false').optional(),
         OTP_TTL_SECONDS: Joi.number().default(600),
         OTP_MAX_ATTEMPTS: Joi.number().default(5),
+        VNP_TMN_CODE: Joi.string().optional(),
+        VNP_HASH_SECRET: Joi.string().optional(),
+        VNP_URL: Joi.string().uri().optional(),
+        VNP_RETURN_URL: Joi.string().uri().optional(),
+        VNP_IPN_URL: Joi.string().uri().optional(),
       }),
     }),
     MongooseModule.forRootAsync({
@@ -68,6 +74,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     NotificationsModule,
     ReviewsModule,
     TransactionsModule,
+    PaymentsModule,
     ShipmentsModule,
     InventoryMovementsModule,
     ChatModule,
