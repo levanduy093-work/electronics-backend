@@ -17,7 +17,11 @@ export class Review {
 
   @Prop({ type: [String], default: [] })
   images: string[];
+
+  @Prop()
+  userName?: string;
 }
 
 export type ReviewDocument = HydratedDocument<Review>;
 export const ReviewSchema = SchemaFactory.createForClass(Review);
+ReviewSchema.index({ productId: 1, userId: 1 }, { unique: true });
