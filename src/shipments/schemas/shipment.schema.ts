@@ -28,6 +28,12 @@ export class Shipment {
   statusHistory: StatusEntry[];
 
   @Prop()
+  paymentMethod?: string;
+
+  @Prop()
+  paymentStatus?: string;
+
+  @Prop()
   expectedDelivery?: Date;
 }
 

@@ -39,4 +39,12 @@ export class CreateShipmentDto {
   @IsOptional()
   @IsDateString()
   expectedDelivery?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentMethod?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string;
 }

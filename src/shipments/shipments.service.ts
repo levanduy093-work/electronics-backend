@@ -4,22 +4,36 @@ import { Model, Types } from 'mongoose';
 import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { UpdateShipmentDto } from './dto/update-shipment.dto';
 import { Shipment, ShipmentDocument } from './schemas/shipment.schema';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
 
 @Injectable()
 export class ShipmentsService {
   constructor(
     @InjectModel(Shipment.name)
     private readonly shipmentModel: Model<ShipmentDocument>,
+    @InjectModel(Order.name)
+    private readonly orderModel: Model<OrderDocument>,
   ) {}
 
   async create(data: CreateShipmentDto) {
-    const created = await this.shipmentModel.create(this.mapDto(data));
-    return this.strip(created.toObject());
+    const mapped = this.mapDto(data);
+    if (mapped.status && (!mapped.statusHistory || mapped.statusHistory.length === 0)) {
+      mapped.statusHistory = [{ status: mapped.status, at: new Date() }];
+    }
+    const created = await this.shipmentModel.create(mapped);
+    const result = this.strip(created.toObject());
+    await this.syncPaymentToOrder(result.orderId, result.paymentStatus);
+    return result;
   }
 
   async findAll() {
     const docs = await this.shipmentModel.find().lean();
     return docs.map(this.strip);
+  }
+
+  async findByOrderId(orderId: string) {
+    const doc = await this.shipmentModel.findOne({ orderId: new Types.ObjectId(orderId) }).lean();
+    return doc ? this.strip(doc) : null;
   }
 
   async findOne(id: string) {
@@ -29,12 +43,25 @@ export class ShipmentsService {
   }
 
   async update(id: string, data: UpdateShipmentDto) {
+    const existing = await this.shipmentModel.findById(id).lean();
+    if (!existing) throw new NotFoundException('Shipment not found');
+
     const mapped = this.mapDto(data);
+    const payload: any = { ...mapped };
+
+    if (mapped.status && mapped.status !== existing.status) {
+      const history = [...(existing.statusHistory || [])];
+      history.push({ status: mapped.status, at: new Date() });
+      payload.statusHistory = history;
+    }
+
     const doc = await this.shipmentModel
-      .findByIdAndUpdate(id, mapped, { new: true, lean: true })
+      .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Shipment not found');
-    return this.strip(doc);
+    const result = this.strip(doc);
+    await this.syncPaymentToOrder(result.orderId, payload.paymentStatus ?? result.paymentStatus);
+    return result;
   }
 
   async remove(id: string) {
@@ -54,6 +81,12 @@ export class ShipmentsService {
       }));
     }
     return mapped;
+  }
+
+  private async syncPaymentToOrder(orderId?: Types.ObjectId | string, paymentStatus?: string) {
+    if (!orderId || !paymentStatus) return;
+    const parsedOrderId = typeof orderId === 'string' ? new Types.ObjectId(orderId) : orderId;
+    await this.orderModel.findByIdAndUpdate(parsedOrderId, { paymentStatus }, { lean: true }).exec();
   }
 
   private strip = (doc: Partial<Shipment>) => {

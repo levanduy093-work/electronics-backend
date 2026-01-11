@@ -7,6 +7,7 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
 import { TransactionsService } from '../transactions/transactions.service';
 import { Transaction, TransactionDocument } from '../transactions/schemas/transaction.schema';
+import { ShipmentsService } from '../shipments/shipments.service';
 
 @Injectable()
 export class OrdersService {
@@ -16,6 +17,7 @@ export class OrdersService {
     @InjectModel(Transaction.name)
     private readonly transactionModel: Model<TransactionDocument>,
     private readonly transactionsService: TransactionsService,
+    private readonly shipmentsService: ShipmentsService,
   ) {}
 
   async create(data: CreateOrderDto, user: JwtPayload) {
@@ -60,6 +62,12 @@ export class OrdersService {
 
     if (this.isCodPayment(updated.payment)) {
       await this.syncCodTransaction(updated);
+    }
+
+    const wasShipped = Boolean(existing.status?.shipped);
+    const isNowShipped = Boolean(updated.status?.shipped);
+    if (!updated.isCancelled && isNowShipped) {
+      await this.ensureShipmentExists(updated, wasShipped);
     }
 
     return updated;
@@ -153,5 +161,25 @@ export class OrdersService {
         ...paidAtUpdate,
       });
     }
+  }
+
+  private async ensureShipmentExists(order: Partial<Order>, wasShipped: boolean) {
+    const orderId = (order as any)._id?.toString?.();
+    if (!orderId) return;
+    const existingShipment = await this.shipmentsService.findByOrderId(orderId);
+    if (existingShipment) return existingShipment;
+
+    const paymentMethod = this.normalizePayment(order.payment);
+    const defaultStatus = wasShipped ? 'delivered' : 'in_transit';
+
+    return this.shipmentsService.create({
+      orderId,
+      carrier: 'Nội bộ',
+      trackingNumber: order.code || orderId,
+      status: defaultStatus,
+      statusHistory: [{ status: defaultStatus, at: new Date().toISOString() }],
+      paymentMethod,
+      paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
+    });
   }
 }

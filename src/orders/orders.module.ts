@@ -5,6 +5,7 @@ import { OrdersService } from './orders.service';
 import { Order, OrderSchema } from './schemas/order.schema';
 import { Transaction, TransactionSchema } from '../transactions/schemas/transaction.schema';
 import { TransactionsModule } from '../transactions/transactions.module';
+import { ShipmentsModule } from '../shipments/shipments.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { TransactionsModule } from '../transactions/transactions.module';
       { name: Transaction.name, schema: TransactionSchema },
     ]),
     TransactionsModule,
+    ShipmentsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
