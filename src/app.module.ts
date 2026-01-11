@@ -22,6 +22,7 @@ import { UsersModule } from './users/users.module';
 import { VouchersModule } from './vouchers/vouchers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -47,6 +48,9 @@ import { PaymentsModule } from './payments/payments.module';
         VNP_URL: Joi.string().uri().optional(),
         VNP_RETURN_URL: Joi.string().uri().optional(),
         VNP_IPN_URL: Joi.string().uri().optional(),
+        CLOUDINARY_CLOUD_NAME: Joi.string().required(),
+        CLOUDINARY_API_KEY: Joi.string().required(),
+        CLOUDINARY_API_SECRET: Joi.string().required(),
       }),
     }),
     MongooseModule.forRootAsync({
@@ -81,6 +85,7 @@ import { PaymentsModule } from './payments/payments.module';
     AiModule,
     HealthModule,
     EventsModule,
+    UploadModule,
   ],
   providers: [
     {

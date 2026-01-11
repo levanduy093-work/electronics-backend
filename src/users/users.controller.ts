@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -9,11 +21,15 @@ import { AddressDto } from './dto/address.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersService } from './users.service';
+import { CloudinaryService } from '../cloudinary/cloudinary.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   @Roles('admin')
   @Post(':id/vouchers')
@@ -31,7 +47,16 @@ export class UsersController {
   }
 
   @Patch('me')
-  updateMyProfile(@CurrentUser() user: JwtPayload, @Body() dto: UpdateUserDto) {
+  @UseInterceptors(FileInterceptor('avatar'))
+  async updateMyProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateUserDto,
+    @UploadedFile() avatar?: Express.Multer.File,
+  ) {
+    if (avatar) {
+      const result = await this.cloudinaryService.uploadImage(avatar);
+      dto.avatar = result.secure_url;
+    }
     return this.usersService.updateSelf(user.sub, dto);
   }
 
