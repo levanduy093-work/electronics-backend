@@ -7,9 +7,11 @@ import {
   MaxFileSizeValidator,
   FileTypeValidator,
   Query,
+  Body,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
+import { UploadImageByUrlDto } from './dto/upload-by-url.dto';
 
 const sanitizeFolder = (value?: string) => {
   if (!value) return undefined;
@@ -38,5 +40,11 @@ export class UploadController {
   ) {
     const safeFolder = sanitizeFolder(folder);
     return this.cloudinaryService.uploadImage(file, safeFolder);
+  }
+
+  @Post('image/by-url')
+  async uploadImageByUrl(@Body() body: UploadImageByUrlDto, @Query('folder') folder?: string) {
+    const safeFolder = sanitizeFolder(folder);
+    return this.cloudinaryService.uploadImageByUrl(body.url, safeFolder);
   }
 }
