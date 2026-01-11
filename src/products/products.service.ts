@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument } from './schemas/product.schema';
@@ -58,12 +58,26 @@ export class ProductsService implements OnModuleInit {
   }
 
   async findAll() {
-    const docs = await this.productModel.find().lean();
+    const docs = await this.productModel
+      .aggregate([
+        ...this.buildReviewStatsPipeline(),
+        { $project: { reviewStats: 0 } },
+      ])
+      .exec();
+
     return docs.map(this.strip);
   }
 
   async findOne(id: string) {
-    const doc = await this.productModel.findById(id).lean();
+    const docs = await this.productModel
+      .aggregate([
+        { $match: { _id: new Types.ObjectId(id) } },
+        ...this.buildReviewStatsPipeline(),
+        { $project: { reviewStats: 0 } },
+      ])
+      .exec();
+
+    const doc = docs[0];
     if (!doc) throw new NotFoundException('Product not found');
     return this.strip(doc);
   }
@@ -91,4 +105,36 @@ export class ProductsService implements OnModuleInit {
     const { __v, ...rest } = doc as Partial<Product & { __v?: number }>;
     return rest;
   };
+
+  private buildReviewStatsPipeline() {
+    return [
+      {
+        $lookup: {
+          from: 'reviews',
+          let: { productId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$productId', '$$productId'] },
+              },
+            },
+            {
+              $group: {
+                _id: '$productId',
+                avgRating: { $avg: '$rating' },
+                count: { $sum: 1 },
+              },
+            },
+          ],
+          as: 'reviewStats',
+        },
+      },
+      {
+        $addFields: {
+          averageRating: { $ifNull: [{ $arrayElemAt: ['$reviewStats.avgRating', 0] }, 0] },
+          reviewCount: { $ifNull: [{ $arrayElemAt: ['$reviewStats.count', 0] }, 0] },
+        },
+      },
+    ];
+  }
 }

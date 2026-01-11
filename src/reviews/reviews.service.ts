@@ -90,8 +90,9 @@ export class ReviewsService {
   };
 
   private async updateProductStats(productId: string) {
+    const objectId = new Types.ObjectId(productId);
     const stats = await this.reviewModel.aggregate([
-      { $match: { productId: new Types.ObjectId(productId) } },
+      { $match: { productId: objectId } },
       {
         $group: {
           _id: '$productId',
@@ -103,7 +104,7 @@ export class ReviewsService {
 
     const summary = stats[0];
     await this.productModel.updateOne(
-      { _id: productId },
+      { _id: objectId },
       {
         averageRating: summary?.avgRating ?? 0,
         reviewCount: summary?.count ?? 0,
