@@ -6,11 +6,13 @@ import {
   InventoryMovement,
   InventoryMovementSchema,
 } from './schemas/inventory-movement.schema';
+import { Product, ProductSchema } from '../products/schemas/product.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: InventoryMovement.name, schema: InventoryMovementSchema },
+      { name: Product.name, schema: ProductSchema },
     ]),
   ],
   controllers: [InventoryMovementsController],
