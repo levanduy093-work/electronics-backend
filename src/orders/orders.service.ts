@@ -33,6 +33,9 @@ export class OrdersService {
   async findAll(user: JwtPayload) {
     const filter = user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
     const docs = await this.orderModel.find(filter).lean();
+    // Đồng bộ giao dịch COD nếu bị thiếu (tránh mất transaction do client gửi chuỗi payment khác chuẩn)
+    const codOrders = docs.filter((o) => this.isCodPayment(o.payment));
+    await Promise.all(codOrders.map((o) => this.syncCodTransaction(o)));
     return docs.map(this.strip);
   }
 
@@ -72,6 +75,9 @@ export class OrdersService {
 
   private mapDto(data: Partial<CreateOrderDto>, userId?: string) {
     const mapped: any = { ...data };
+    if (data.payment) {
+      mapped.payment = this.normalizePayment(data.payment);
+    }
     if (userId) mapped.userId = new Types.ObjectId(userId);
     if (data.voucher) mapped.voucher = new Types.ObjectId(data.voucher);
     if (data.items) {
@@ -104,8 +110,18 @@ export class OrdersService {
     return rest;
   };
 
+  private normalizePayment(payment?: string | null) {
+    const p = (payment || '').trim();
+    if (!p) return p;
+    const lower = p.toLowerCase();
+    if (lower.includes('cod') || lower.includes('cash')) return 'cod';
+    if (lower.includes('vnpay')) return 'vnpay';
+    return p;
+  }
+
   private isCodPayment(payment?: string | null) {
-    return (payment || '').toLowerCase() === 'cod';
+    const normalized = this.normalizePayment(payment);
+    return (normalized || '').toLowerCase() === 'cod';
   }
 
   private async syncCodTransaction(order: Partial<Order>) {
@@ -120,7 +136,7 @@ export class OrdersService {
       .findOne({ orderId: new Types.ObjectId(orderId), provider: 'cod' })
       .lean();
 
-    const paidAtUpdate = status === 'paid' ? { paidAt: new Date() } : {};
+    const paidAtUpdate = status === 'paid' ? { paidAt: new Date().toISOString() } : {};
 
     if (existing?._id) {
       await this.transactionModel
