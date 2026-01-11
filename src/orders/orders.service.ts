@@ -5,18 +5,29 @@ import { JwtPayload } from '../common/types/jwt-payload';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
+import { TransactionsService } from '../transactions/transactions.service';
+import { Transaction, TransactionDocument } from '../transactions/schemas/transaction.schema';
 
 @Injectable()
 export class OrdersService {
   constructor(
     @InjectModel(Order.name)
     private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(Transaction.name)
+    private readonly transactionModel: Model<TransactionDocument>,
+    private readonly transactionsService: TransactionsService,
   ) {}
 
   async create(data: CreateOrderDto, user: JwtPayload) {
     const payload = this.mapDto(data, user.sub);
     const created = await this.orderModel.create(payload);
-    return this.strip(created.toObject());
+    const createdObj = this.strip(created.toObject());
+
+    if (this.isCodPayment(createdObj.payment)) {
+      await this.syncCodTransaction(createdObj);
+    }
+
+    return createdObj;
   }
 
   async findAll(user: JwtPayload) {
@@ -42,7 +53,13 @@ export class OrdersService {
       .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Order not found');
-    return this.strip(doc);
+    const updated = this.strip(doc);
+
+    if (this.isCodPayment(updated.payment)) {
+      await this.syncCodTransaction(updated);
+    }
+
+    return updated;
   }
 
   async remove(id: string, user: JwtPayload) {
@@ -86,4 +103,39 @@ export class OrdersService {
     const { __v, ...rest } = doc as Partial<Order & { __v?: number }>;
     return rest;
   };
+
+  private isCodPayment(payment?: string | null) {
+    return (payment || '').toLowerCase() === 'cod';
+  }
+
+  private async syncCodTransaction(order: Partial<Order>) {
+    const orderId = (order as any)._id?.toString?.();
+    const userId = (order as any).userId?.toString?.();
+    if (!orderId || !userId) return;
+
+    const status = order.paymentStatus || 'pending';
+    const amount = (order as any).totalPrice || 0;
+
+    const existing = await this.transactionModel
+      .findOne({ orderId: new Types.ObjectId(orderId), provider: 'cod' })
+      .lean();
+
+    const paidAtUpdate = status === 'paid' ? { paidAt: new Date() } : {};
+
+    if (existing?._id) {
+      await this.transactionModel
+        .findByIdAndUpdate(existing._id, { status, ...paidAtUpdate }, { lean: true })
+        .exec();
+    } else {
+      await this.transactionsService.create({
+        orderId,
+        userId,
+        provider: 'cod',
+        amount,
+        currency: 'VND',
+        status,
+        ...paidAtUpdate,
+      });
+    }
+  }
 }
