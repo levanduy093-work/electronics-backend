@@ -115,10 +115,40 @@ export class AiService {
       generationConfig: { temperature: 0.4, maxOutputTokens: 600 },
     };
 
-    const reply = await this.callGemini(model, apiKey, requestBody);
-    const actions = this.buildActions(dto.message, productCards, user.sub);
+    const rawReply = await this.callGemini(model, apiKey, requestBody);
 
-    return { reply, cards: productCards, actions };
+    // Parse relevant codes from LLM response to filter irrelevant products from UI
+    let reply = rawReply;
+    let finalCards = productCards;
+    const codeMatch = rawReply.match(/RELEVANT_CODES:\s*\[(.*?)\]/);
+    if (codeMatch) {
+      try {
+        const codesStr = codeMatch[1];
+        const codes = codesStr
+          .split(',')
+          .map((c) => c.trim().replace(/['"]/g, ''))
+          .filter(Boolean);
+
+        if (codes.length > 0) {
+          // If the AI explicitly identified relevant codes, filter the cards
+          finalCards = productCards.filter((p) => p.code && codes.includes(p.code));
+        } else {
+          // AI returned empty list [] -> user likely asked something else or no product matched
+          // But if we have productCards from search, maybe we should keep them if AI didn't mean to filter all?
+          // Instruction says: "Nếu không có sản phẩm phù hợp, trả về []".
+          // So if [], we should probably hide cards to respect "Nó chỉ nên hiển thị đúng cái nó trả lời".
+          finalCards = [];
+        }
+      } catch (e) {
+        // ignore parse error context
+      }
+      // Remove the control line from the message presented to user
+      reply = rawReply.replace(/RELEVANT_CODES:.*(\n|$)/, '').trim();
+    }
+
+    const actions = this.buildActions(dto.message, finalCards, user.sub);
+
+    return { reply, cards: finalCards, actions };
   }
 
   async confirm(dto: AiConfirmDto, user: JwtPayload) {
@@ -182,6 +212,7 @@ export class AiService {
       'Không thực hiện hành động thay người dùng (tạo/hủy đơn, thanh toán). Chỉ hướng dẫn thao tác trong app.',
       'ĐỊNH DẠNG BẮT BUỘC: viết thành các bullet ngắn gọn, không dùng ký tự * lặp nhiều lần; dùng dấu "-" đầu dòng. Nếu liệt kê sản phẩm, mỗi sản phẩm 1 dòng: "- Tên | Mã | Giá | Tồn kho". Nếu hướng dẫn, dùng 2-4 bullet ngắn. Không chèn dấu xuống dòng thừa.',
       'Nếu chỉ có 1 sản phẩm gợi ý, hãy mở đầu bằng tiêu đề ngắn (vd: "Gợi ý sản phẩm") rồi xuống dòng và bullet chi tiết.',
+      'CHỌN LỌC SẢN PHẨM: Nếu context có nhiều sản phẩm nhưng chỉ một số phù hợp với câu hỏi, chỉ trả lời về sản phẩm phù hợp. Cuối câu trả lời, hãy liệt kê mã sản phẩm (code) của những sản phẩm phù hợp nhất trong một dòng ẩn theo format: "RELEVANT_CODES: [CODE1, CODE2]". Nếu không có sản phẩm phù hợp, trả về "RELEVANT_CODES: []".',
       user?.role === 'admin'
         ? 'Bạn đang hỗ trợ tài khoản admin (có thể xem dữ liệu tổng quan nếu được cung cấp trong CONTEXT).'
         : 'Bạn đang hỗ trợ người dùng thường: tuyệt đối không suy đoán hay truy cập dữ liệu của người khác.',
@@ -272,13 +303,30 @@ export class AiService {
         const rx = new RegExp(this.escapeRegExp(token), 'i');
         return [{ name: rx }, { code: rx }, { category: rx }];
       });
-      const flatOr = orClauses.flat();
-      const products = await this.productModel
-        .find(flatOr.length ? { $or: flatOr } : {})
-        .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-        .limit(5)
-        .lean()
-        .exec();
+
+      // Try fuzzy AND search first: products that match ALL keywords (in name, code or category)
+      // This helps when user searches specific items like "Điện trở 10k" -> must have "Điện trở" AND "10k"
+      let products: any[] = [];
+      if (productHints.length > 1) {
+        const andClauses = orClauses.map((group) => ({ $or: group }));
+        products = await this.productModel
+          .find({ $and: andClauses })
+          .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
+          .limit(5)
+          .lean()
+          .exec();
+      }
+
+      // Fallback to broad OR search if no precise match
+      if (!products.length) {
+        const flatOr = orClauses.flat();
+        products = await this.productModel
+          .find(flatOr.length ? { $or: flatOr } : {})
+          .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
+          .limit(5)
+          .lean()
+          .exec();
+      }
 
       if (products.length) {
         productCards.push(
@@ -349,6 +397,32 @@ export class AiService {
       'i',
       'you',
       'me',
+      // Common Vietnamese shopping words
+      'con',
+      'còn',
+      'hàng',
+      'hang',
+      'không',
+      'khong',
+      'co',
+      'có',
+      'sp',
+      'san',
+      'pham',
+      'sản',
+      'phẩm',
+      'nhieu',
+      'nhiêu',
+      'bao',
+      'bn',
+      'shop',
+      'loai',
+      'loại',
+      'cai',
+      'cái',
+      'dang',
+      'đang',
+      'het',
     ]);
     const keywords = tokens.filter((t) => t.length >= 3 && !stop.has(t)).slice(0, 4);
     return Array.from(new Set(keywords));
