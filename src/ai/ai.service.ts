@@ -483,12 +483,28 @@ export class AiService {
   }
 
   private parsePartsFromResponse(raw: string) {
-    let cleaned = raw.trim();
-    // Extract JSON array substring if embedded in text
+    // Remove markdown code blocks and whitespace
+    let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+
     const firstBracket = cleaned.indexOf('[');
     const lastBracket = cleaned.lastIndexOf(']');
-    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-      cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+
+    if (firstBracket !== -1) {
+      if (lastBracket !== -1 && lastBracket > firstBracket) {
+        // Complete array found
+        cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+      } else {
+        // Likely truncated: try to salvage valid objects up to the last closing brace
+        const lastCurly = cleaned.lastIndexOf('}');
+        if (lastCurly > firstBracket) {
+          cleaned = cleaned.substring(firstBracket, lastCurly + 1) + ']';
+        } else {
+          // Cannot salvage
+          return [];
+        }
+      }
+    } else {
+      return [];
     }
 
     try {
@@ -510,7 +526,7 @@ export class AiService {
           .filter((p) => p.name || p.value || p.vietnameseName);
       }
     } catch (e) {
-      // ignore parse error
+      // JSON parse failed even after repair attempt
     }
     return [];
   }
