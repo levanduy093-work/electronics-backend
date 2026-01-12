@@ -53,7 +53,24 @@ export class OrdersService {
     if (!existing) throw new NotFoundException('Order not found');
     this.ensureOwnerOrAdmin(existing.userId, user);
 
+    const isCancelling = data.isCancelled === true;
+    const isStatusReset = this.isStatusReset(data.status);
+
     const payload = this.mapDto(data, existing.userId?.toString());
+
+    if (isCancelling) {
+      payload.paymentStatus = payload.paymentStatus || 'cancelled';
+    }
+
+    if (isStatusReset) {
+      const orderedAt = existing.status?.ordered || (existing as any).createdAt;
+      payload.status = orderedAt ? { ordered: new Date(orderedAt) } : {};
+      payload.isCancelled = false;
+      if ((existing.paymentStatus || '').toLowerCase() === 'cancelled') {
+        payload.paymentStatus = 'pending';
+      }
+    }
+
     const doc = await this.orderModel
       .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
@@ -64,6 +81,11 @@ export class OrdersService {
       await this.syncCodTransaction(updated);
     }
 
+    const shouldRemoveShipments = isCancelling || isStatusReset;
+    if (shouldRemoveShipments) {
+      await this.shipmentsService.removeByOrderId(id);
+    }
+
     const wasShipped = Boolean(existing.status?.shipped);
     const isNowShipped = Boolean(updated.status?.shipped);
     if (!updated.isCancelled && isNowShipped) {
@@ -71,6 +93,28 @@ export class OrdersService {
     }
 
     return updated;
+  }
+
+  async rollback(id: string, user: JwtPayload) {
+    return this.update(
+      id,
+      {
+        status: {},
+        isCancelled: false,
+      } as UpdateOrderDto,
+      user,
+    );
+  }
+
+  async cancel(id: string, user: JwtPayload) {
+    return this.update(
+      id,
+      {
+        isCancelled: true,
+        paymentStatus: 'cancelled',
+      } as UpdateOrderDto,
+      user,
+    );
   }
 
   async remove(id: string, user: JwtPayload) {
@@ -104,6 +148,11 @@ export class OrdersService {
       };
     }
     return mapped;
+  }
+
+  private isStatusReset(status?: UpdateOrderDto['status']) {
+    if (!status) return false;
+    return !status.ordered && !status.confirmed && !status.packaged && !status.shipped;
   }
 
   private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {

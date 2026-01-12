@@ -27,6 +27,16 @@ export class OrdersController {
     return this.ordersService.findOne(id, user);
   }
 
+  @Patch(':id/rollback')
+  rollback(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.ordersService.rollback(id, user);
+  }
+
+  @Patch(':id/cancel')
+  cancel(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
+    return this.ordersService.cancel(id, user);
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseObjectIdPipe) id: string,

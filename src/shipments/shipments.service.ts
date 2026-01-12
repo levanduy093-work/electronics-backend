@@ -17,6 +17,9 @@ export class ShipmentsService {
 
   async create(data: CreateShipmentDto) {
     const mapped = this.mapDto(data);
+    if (!mapped.expectedDelivery) {
+      mapped.expectedDelivery = this.getDefaultExpectedDelivery();
+    }
     if (mapped.status && (!mapped.statusHistory || mapped.statusHistory.length === 0)) {
       mapped.statusHistory = [{ status: mapped.status, at: new Date() }];
     }
@@ -34,6 +37,12 @@ export class ShipmentsService {
   async findByOrderId(orderId: string) {
     const doc = await this.shipmentModel.findOne({ orderId: new Types.ObjectId(orderId) }).lean();
     return doc ? this.strip(doc) : null;
+  }
+
+  async removeByOrderId(orderId: string) {
+    if (!orderId) return;
+    const parsedOrderId = new Types.ObjectId(orderId);
+    await this.shipmentModel.deleteMany({ orderId: parsedOrderId });
   }
 
   async findOne(id: string) {
@@ -83,6 +92,12 @@ export class ShipmentsService {
     return mapped;
   }
 
+  private getDefaultExpectedDelivery(baseDate: Date = new Date()) {
+    const daysToAdd = 2 + Math.random(); // 2–3 days window
+    const eta = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+    return eta;
+  }
+
   private async syncPaymentToOrder(orderId?: Types.ObjectId | string, paymentStatus?: string) {
     if (!orderId || !paymentStatus) return;
     const parsedOrderId = typeof orderId === 'string' ? new Types.ObjectId(orderId) : orderId;
@@ -91,6 +106,9 @@ export class ShipmentsService {
 
   private strip = (doc: Partial<Shipment>) => {
     const { __v, ...rest } = doc as Partial<Shipment & { __v?: number }>;
+    if (!rest.expectedDelivery && rest.createdAt) {
+      rest.expectedDelivery = this.getDefaultExpectedDelivery(new Date(rest.createdAt));
+    }
     return rest;
   };
 }

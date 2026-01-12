@@ -23,6 +23,7 @@ import { VouchersModule } from './vouchers/vouchers.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
+import { BannersModule } from './banners/banners.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { UploadModule } from './upload/upload.module';
     HealthModule,
     EventsModule,
     UploadModule,
+    BannersModule,
   ],
   providers: [
     {
