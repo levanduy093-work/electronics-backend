@@ -301,10 +301,10 @@ export class AiService {
     if (productHints.length) {
       const orClauses = productHints.map((token) => {
         const rx = new RegExp(this.escapeRegExp(token), 'i');
-        return [{ name: rx }, { code: rx }, { category: rx }];
+        return [{ name: rx }, { code: rx }, { category: rx }, { description: rx }];
       });
 
-      // Try fuzzy AND search first: products that match ALL keywords (in name, code or category)
+      // Try fuzzy AND search first: products that match ALL keywords (in name, code, category or description)
       // This helps when user searches specific items like "Điện trở 10k" -> must have "Điện trở" AND "10k"
       let products: any[] = [];
       if (productHints.length > 1) {
@@ -445,11 +445,14 @@ export class AiService {
   private async extractPartsFromImage(message: string, imageUrl: string, apiKey: string, model: string) {
     const image = await this.downloadImageAsBase64(imageUrl);
     const prompt = [
-      'Bạn là kỹ sư điện tử. Phân tích ảnh linh kiện/schematic.',
-      'Hãy trích xuất danh sách linh kiện (reference, giá trị, part number) và mô tả ngắn.',
-      `Ngữ cảnh người dùng: "${message || 'Không có'}"`,
-      'Trả kết quả JSON thuần, KHÔNG thêm text, dạng: [{"name":"U1 hoặc D1...","value":"317T hoặc 1N4004...","package":"SOT-223...","notes":"..."}]',
-      'Nếu không chắc, vẫn cố gắng trả JSON với các linh kiện có thể thấy; để trống field nếu không biết.',
+      'Bạn là chuyên gia về mạch điện tử. Hãy phân tích ảnh (schematic hoặc linh kiện thực tế) và trích xuất danh sách linh kiện.',
+      'Yêu cầu: Trả về 1 mảng JSON thuần gồm các object có cấu trúc:',
+      '{ "name": "Mã linh kiện (VD: LM7805, 1N4004) hoặc Tên tiếng Anh (VD: Resistor)", "vietnameseName": "Tên tiếng Việt (VD: Điện trở, Tụ điện, Biến trở, IC)", "value": "Giá trị/Thông số (VD: 10k, 100uF, 25V)", "designator": "Ký hiệu (VD: R1, U1, C5)" }',
+      'Quy tắc:',
+      '1. Ưu tiên tìm "Mã linh kiện" cụ thể đưa vào "name".',
+      '2. Luôn suy luận "vietnameseName" từ ký hiệu. Ví dụ: R->Điện trở, C->Tụ điện, D->Diode, U/IC->IC, POT/VR->Biến trở.',
+      '3. KHÔNG trả về markdown code block, KHÔNG trả về text giải thích. CHỈ TRẢ VỀ JSON ARRAY.',
+      `Context: "${message || ''}"`,
     ].join('\n');
 
     const requestBody: GeminiGenerateContentRequest = {
@@ -467,7 +470,7 @@ export class AiService {
           ],
         },
       ],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 400 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
     };
 
     const raw = await this.callGemini(model, apiKey, requestBody);
@@ -475,37 +478,53 @@ export class AiService {
   }
 
   private parsePartsFromResponse(raw: string) {
-    const cleaned = raw.trim().replace(/```json/gi, '').replace(/```/g, '');
+    let cleaned = raw.trim();
+    // Extract JSON array substring if embedded in text
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+    }
+
     try {
       const parsed = JSON.parse(cleaned);
       if (Array.isArray(parsed)) {
         return parsed
           .map((p) => ({
             name: typeof p?.name === 'string' ? p.name : undefined,
+            vietnameseName: typeof p?.vietnameseName === 'string' ? p.vietnameseName : undefined,
             value: typeof p?.value === 'string' ? p.value : undefined,
             package: typeof p?.package === 'string' ? p.package : undefined,
-            notes: typeof p?.notes === 'string' ? p.notes : undefined,
+            notes:
+              typeof p?.designator === 'string'
+                ? p.designator
+                : typeof p?.notes === 'string'
+                  ? p.notes
+                  : undefined,
           }))
           .filter((p) => p.name || p.value);
       }
-    } catch {
+    } catch (e) {
       // ignore parse error
     }
     return [];
   }
 
-  private async searchProductsByParts(parts: Array<{ name?: string; value?: string }>) {
+  private async searchProductsByParts(
+    parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
+  ) {
     const tokens = parts
-      .flatMap((p) => [p.name, p.value])
+      .flatMap((p) => [p.name, p.value, p.vietnameseName])
       .filter(Boolean)
-      .map((t) => (t || '').toString())
-      .slice(0, 6);
+      .map((t) => (t || '').toString().trim())
+      .filter((v, i, a) => a.indexOf(v) === i) // Unique
+      .slice(0, 20); // Limit to 20 unique tokens
 
     if (!tokens.length) return [];
 
     const ors = tokens.map((token) => {
       const rx = new RegExp(this.escapeRegExp(token), 'i');
-      return [{ name: rx }, { code: rx }, { category: rx }];
+      return [{ name: rx }, { code: rx }, { category: rx }, { description: rx }];
     });
     const flatOr = ors.flat();
     const products = await this.productModel
@@ -527,14 +546,21 @@ export class AiService {
   }
 
   private composeVisionReply(
-    parts: Array<{ name?: string; value?: string; package?: string; notes?: string }>,
+    parts: Array<{
+      name?: string;
+      value?: string;
+      package?: string;
+      notes?: string;
+      vietnameseName?: string;
+    }>,
     products: AiProductCard[],
   ) {
     const lines: string[] = [];
     if (parts.length) {
       lines.push('Các linh kiện phát hiện từ ảnh:');
-      parts.slice(0, 6).forEach((p) => {
-        const pieces = [p.name, p.value, p.package].filter(Boolean).join(' | ');
+      parts.slice(0, 8).forEach((p) => {
+        const nameDis = p.vietnameseName || p.name;
+        const pieces = [nameDis, p.value, p.notes].filter(Boolean).join(' - ');
         lines.push(`- ${pieces || 'Linh kiện'}`);
       });
     } else {
