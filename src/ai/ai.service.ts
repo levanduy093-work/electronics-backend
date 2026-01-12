@@ -160,6 +160,8 @@ export class AiService {
       'Chỉ sử dụng dữ liệu được cung cấp trong phần CONTEXT. Không bịa thông tin.',
       'Không yêu cầu/không lưu mật khẩu, OTP, token. Không tiết lộ khóa API.',
       'Không thực hiện hành động thay người dùng (tạo/hủy đơn, thanh toán). Chỉ hướng dẫn thao tác trong app.',
+      'ĐỊNH DẠNG BẮT BUỘC: viết thành các bullet ngắn gọn, không dùng ký tự * lặp nhiều lần; dùng dấu "-" đầu dòng. Nếu liệt kê sản phẩm, mỗi sản phẩm 1 dòng: "- Tên | Mã | Giá | Tồn kho". Nếu hướng dẫn, dùng 2-4 bullet ngắn. Không chèn dấu xuống dòng thừa.',
+      'Nếu chỉ có 1 sản phẩm gợi ý, hãy mở đầu bằng tiêu đề ngắn (vd: "Gợi ý sản phẩm") rồi xuống dòng và bullet chi tiết.',
       user?.role === 'admin'
         ? 'Bạn đang hỗ trợ tài khoản admin (có thể xem dữ liệu tổng quan nếu được cung cấp trong CONTEXT).'
         : 'Bạn đang hỗ trợ người dùng thường: tuyệt đối không suy đoán hay truy cập dữ liệu của người khác.',
