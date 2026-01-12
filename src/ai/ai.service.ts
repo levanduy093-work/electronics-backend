@@ -13,6 +13,7 @@ import type { JwtPayload } from '../common/types/jwt-payload';
 import { CartsService } from '../carts/carts.service';
 import { OrdersService } from '../orders/orders.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { UsersService } from '../users/users.service';
 import { randomUUID } from 'crypto';
 import { AiChatDto } from './dto/ai-chat.dto';
 import { AiConfirmDto } from './dto/ai-confirm.dto';
@@ -78,6 +79,7 @@ export class AiService {
     private readonly config: ConfigService,
     private readonly ordersService: OrdersService,
     private readonly cartsService: CartsService,
+    private readonly usersService: UsersService,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
   ) {}
@@ -207,10 +209,12 @@ export class AiService {
   ): Promise<{ contextText: string; productCards: AiProductCard[] }> {
     const parts: string[] = [];
     const productCards: AiProductCard[] = [];
+    const normalizedMessage = this.normalizeText(message);
 
-    const wantsOrders = /đơn\s*hàng|order|vận\s*chuyển|giao\s*hàng|tracking|mã\s*đơn|hủy|cancel/i.test(
-      message,
-    );
+    const wantsOrders =
+      /don\s*hang|don\s*mua|lich\s*su\s*mua|order|van\s*chuyen|giao\s*hang|tracking|ma\s*don|huy\s*don|trang\s*thai\s*don|cancel/.test(
+        normalizedMessage,
+      );
     if (wantsOrders) {
       const orders = await this.ordersService.findAll(user);
       const latest = [...orders]
@@ -220,20 +224,45 @@ export class AiService {
           return atB - atA;
         })
         .slice(0, 5);
+      const orderLines = latest.map((o: any) => {
+        const code = o?.code || o?._id;
+        const cancelled = o?.isCancelled ? ' (ĐÃ HỦY)' : '';
+        const total = typeof o?.totalPrice === 'number' ? `${o.totalPrice} VND` : 'N/A';
+        const shipped = o?.status?.shipped ? 'đã shipped' : 'chưa shipped';
+        const payment = o?.payment ? `payment=${o.payment}` : 'payment=N/A';
+        const paymentStatus = o?.paymentStatus ? `paymentStatus=${o.paymentStatus}` : 'paymentStatus=N/A';
+        return `- ${code}${cancelled} | ${shipped} | ${payment} | ${paymentStatus} | total=${total}`;
+      });
 
       parts.push(
         [
           'ĐƠN HÀNG GẦN ĐÂY (tối đa 5):',
-          ...latest.map((o: any) => {
-            const code = o?.code || o?._id;
-            const cancelled = o?.isCancelled ? ' (ĐÃ HỦY)' : '';
-            const total = typeof o?.totalPrice === 'number' ? `${o.totalPrice} VND` : 'N/A';
-            const shipped = o?.status?.shipped ? 'đã shipped' : 'chưa shipped';
-            const payment = o?.payment ? `payment=${o.payment}` : 'payment=N/A';
-            const paymentStatus = o?.paymentStatus ? `paymentStatus=${o.paymentStatus}` : 'paymentStatus=N/A';
-            return `- ${code}${cancelled} | ${shipped} | ${payment} | ${paymentStatus} | total=${total}`;
-          }),
+          ...(orderLines.length ? orderLines : ['- Bạn chưa có đơn hàng nào.']),
         ].join('\n'),
+      );
+    }
+
+    const wantsAddresses =
+      /dia\s*chi|so\s*dia\s*chi|address|shipping\s*address|dia\s*chi\s*giao|dia\s*chi\s*nhan|dia\s*chi\s*mac\s*dinh/.test(
+        normalizedMessage,
+      );
+    if (wantsAddresses) {
+      const addresses = await this.usersService.getUserAddresses(user.sub);
+      const sorted = [...addresses].sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+      parts.push(
+        sorted.length
+          ? [
+              'ĐỊA CHỈ ĐÃ LƯU (ưu tiên địa chỉ mặc định):',
+              ...sorted.map((addr: any) => {
+                const receiver = addr?.name || 'Người nhận';
+                const phone = addr?.phone || 'N/A';
+                const line1 = [addr?.street, addr?.ward, addr?.district, addr?.city].filter(Boolean).join(', ');
+                const type = addr?.type ? ` | ${addr.type}` : '';
+                const isDefault = addr?.isDefault ? ' (mặc định)' : '';
+                return `- ${receiver} | ${phone} | ${line1 || 'Địa chỉ trống'}${type}${isDefault}`;
+              }),
+            ].join('\n')
+          : 'ĐỊA CHỈ ĐÃ LƯU: chưa có địa chỉ nào.',
       );
     }
 
@@ -471,6 +500,14 @@ export class AiService {
         this.pendingActions.delete(id);
       }
     }
+  }
+
+  private normalizeText(value: string) {
+    return (value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/gi, 'd')
+      .toLowerCase();
   }
 
   private async callGemini(model: string, apiKey: string, body: GeminiGenerateContentRequest) {
