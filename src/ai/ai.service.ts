@@ -16,12 +16,21 @@ import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { randomUUID } from 'crypto';
 import { AiChatDto } from './dto/ai-chat.dto';
 import { AiConfirmDto } from './dto/ai-confirm.dto';
+import { Buffer } from 'buffer';
 
 type GeminiGenerateContentRequest = {
   systemInstruction?: { parts: Array<{ text: string }> };
   contents: Array<{
     role: 'user' | 'model';
-    parts: Array<{ text: string }>;
+    parts: Array<
+      | { text: string }
+      | {
+          inlineData: {
+            mimeType: string;
+            data: string;
+          };
+        }
+    >;
   }>;
   generationConfig?: {
     temperature?: number;
@@ -84,6 +93,15 @@ export class AiService {
     }
 
     const model = this.config.get<string>('GEMINI_MODEL') || 'gemini-1.5-flash';
+
+    // If image is provided, try vision flow first
+    if (dto.imageUrl) {
+      const parts = await this.extractPartsFromImage(dto.message, dto.imageUrl, apiKey, model);
+      const productCards = await this.searchProductsByParts(parts);
+      const reply = this.composeVisionReply(parts, productCards);
+      const actions = this.buildActions(dto.message, productCards, user.sub);
+      return { reply, cards: productCards, actions };
+    }
 
     const { contextText, productCards } = await this.buildContext(dto.message, user);
     const systemInstruction = this.buildSystemInstruction(user, contextText);
@@ -179,10 +197,6 @@ export class AiService {
     }));
 
     const userParts = [{ text: dto.message }];
-    if (dto.imageUrl) {
-      userParts.push({ text: `Image URL (for reference): ${dto.imageUrl}` });
-    }
-
     contents.push({ role: 'user', parts: userParts });
     return contents;
   }
@@ -313,6 +327,126 @@ export class AiService {
 
   private escapeRegExp(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async downloadImageAsBase64(url: string) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new BadRequestException('Không tải được ảnh để phân tích');
+    }
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return { base64: buffer.toString('base64'), mimeType: contentType.split(';')[0] || 'image/jpeg' };
+  }
+
+  private async extractPartsFromImage(message: string, imageUrl: string, apiKey: string, model: string) {
+    const image = await this.downloadImageAsBase64(imageUrl);
+    const prompt = [
+      'Bạn là kỹ sư điện tử. Phân tích ảnh linh kiện/schematic.',
+      'Hãy trích xuất danh sách linh kiện (reference, giá trị, part number) và mô tả ngắn.',
+      `Ngữ cảnh người dùng: "${message || 'Không có'}"`,
+      'Trả kết quả JSON thuần, KHÔNG thêm text, dạng: [{"name":"U1 hoặc D1...","value":"317T hoặc 1N4004...","package":"SOT-223...","notes":"..."}]',
+      'Nếu không chắc, vẫn cố gắng trả JSON với các linh kiện có thể thấy; để trống field nếu không biết.',
+    ].join('\n');
+
+    const requestBody: GeminiGenerateContentRequest = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: image.mimeType,
+                data: image.base64,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 400 },
+    };
+
+    const raw = await this.callGemini(model, apiKey, requestBody);
+    return this.parsePartsFromResponse(raw);
+  }
+
+  private parsePartsFromResponse(raw: string) {
+    const cleaned = raw.trim().replace(/```json/gi, '').replace(/```/g, '');
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((p) => ({
+            name: typeof p?.name === 'string' ? p.name : undefined,
+            value: typeof p?.value === 'string' ? p.value : undefined,
+            package: typeof p?.package === 'string' ? p.package : undefined,
+            notes: typeof p?.notes === 'string' ? p.notes : undefined,
+          }))
+          .filter((p) => p.name || p.value);
+      }
+    } catch {
+      // ignore parse error
+    }
+    return [];
+  }
+
+  private async searchProductsByParts(parts: Array<{ name?: string; value?: string }>) {
+    const tokens = parts
+      .flatMap((p) => [p.name, p.value])
+      .filter(Boolean)
+      .map((t) => (t || '').toString())
+      .slice(0, 6);
+
+    if (!tokens.length) return [];
+
+    const ors = tokens.map((token) => {
+      const rx = new RegExp(this.escapeRegExp(token), 'i');
+      return [{ name: rx }, { code: rx }, { category: rx }];
+    });
+    const flatOr = ors.flat();
+    const products = await this.productModel
+      .find(flatOr.length ? { $or: flatOr } : {})
+      .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
+      .limit(5)
+      .lean()
+      .exec();
+
+    return products.map((p) => ({
+      productId: p._id.toString(),
+      name: p.name,
+      price: p.price?.salePrice ?? p.price?.originalPrice ?? 0,
+      stock: typeof p.stock === 'number' ? p.stock : 0,
+      category: p.category,
+      code: p.code,
+      image: Array.isArray(p.images) ? p.images[0] : undefined,
+    }));
+  }
+
+  private composeVisionReply(
+    parts: Array<{ name?: string; value?: string; package?: string; notes?: string }>,
+    products: AiProductCard[],
+  ) {
+    const lines: string[] = [];
+    if (parts.length) {
+      lines.push('Các linh kiện phát hiện từ ảnh:');
+      parts.slice(0, 6).forEach((p) => {
+        const pieces = [p.name, p.value, p.package].filter(Boolean).join(' | ');
+        lines.push(`- ${pieces || 'Linh kiện'}`);
+      });
+    } else {
+      lines.push('- Không chắc linh kiện trong ảnh. Vui lòng chụp rõ hơn hoặc mô tả tên linh kiện.');
+    }
+
+    if (products.length) {
+      lines.push('Gợi ý sản phẩm trong kho:');
+      products.forEach((p) => {
+        lines.push(`- ${p.name} | ${p.code || 'N/A'} | ${p.price} VND | Tồn ${p.stock}`);
+      });
+    } else {
+      lines.push('- Chưa tìm thấy sản phẩm trùng khớp, bạn thử mô tả tên/mã linh kiện.');
+    }
+    return lines.join('\n');
   }
 
   private extractQuantity(message: string) {
