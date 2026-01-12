@@ -6,6 +6,7 @@ import type { JwtPayload } from '../common/types/jwt-payload';
 import { CartsService } from './carts.service';
 import { CreateCartDto } from './dto/create-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
+import { AddCartItemDto } from './dto/add-cart-item.dto';
 
 @Controller('carts')
 @UseGuards(JwtAuthGuard)
@@ -39,5 +40,10 @@ export class CartsController {
   @Delete(':id')
   remove(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
     return this.cartsService.remove(id, user);
+  }
+
+  @Post('items')
+  addItem(@CurrentUser() user: JwtPayload, @Body() dto: AddCartItemDto) {
+    return this.cartsService.addItemForUser(user, dto.productId, dto.quantity);
   }
 }

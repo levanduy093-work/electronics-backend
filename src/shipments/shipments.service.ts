@@ -106,8 +106,9 @@ export class ShipmentsService {
 
   private strip = (doc: Partial<Shipment>) => {
     const { __v, ...rest } = doc as Partial<Shipment & { __v?: number }>;
-    if (!rest.expectedDelivery && rest.createdAt) {
-      rest.expectedDelivery = this.getDefaultExpectedDelivery(new Date(rest.createdAt));
+    const createdAt = (rest as any)?.createdAt;
+    if (!rest.expectedDelivery && createdAt) {
+      rest.expectedDelivery = this.getDefaultExpectedDelivery(new Date(createdAt));
     }
     return rest;
   };

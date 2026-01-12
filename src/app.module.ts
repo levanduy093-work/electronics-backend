@@ -52,6 +52,8 @@ import { BannersModule } from './banners/banners.module';
         CLOUDINARY_CLOUD_NAME: Joi.string().required(),
         CLOUDINARY_API_KEY: Joi.string().required(),
         CLOUDINARY_API_SECRET: Joi.string().required(),
+        GEMINI_API_KEY: Joi.string().optional(),
+        GEMINI_MODEL: Joi.string().optional(),
       }),
     }),
     MongooseModule.forRootAsync({
