@@ -36,6 +36,7 @@ type GeminiGenerateContentRequest = {
   generationConfig?: {
     temperature?: number;
     maxOutputTokens?: number;
+    responseMimeType?: string;
   };
 };
 
@@ -98,9 +99,9 @@ export class AiService {
 
     // If image is provided, try vision flow first
     if (dto.imageUrl) {
-      const parts = await this.extractPartsFromImage(dto.message, dto.imageUrl, apiKey, model);
+      const { parts, raw } = await this.extractPartsFromImage(dto.message, dto.imageUrl, apiKey, model);
       const productCards = await this.searchProductsByParts(parts);
-      const reply = this.composeVisionReply(parts, productCards);
+      const reply = this.composeVisionReply(parts, productCards, raw);
       const actions = this.buildActions(dto.message, productCards, user.sub);
       return { reply, cards: productCards, actions };
     }
@@ -447,12 +448,13 @@ export class AiService {
     const prompt = [
       'Bạn là chuyên gia về mạch điện tử. Hãy phân tích ảnh (schematic hoặc linh kiện thực tế) và trích xuất danh sách linh kiện.',
       'Yêu cầu: Trả về 1 mảng JSON thuần gồm các object có cấu trúc:',
-      '{ "name": "Mã linh kiện (VD: LM7805, 1N4004) hoặc Tên tiếng Anh (VD: Resistor)", "vietnameseName": "Tên tiếng Việt (VD: Điện trở, Tụ điện, Biến trở, IC)", "value": "Giá trị/Thông số (VD: 10k, 100uF, 25V)", "designator": "Ký hiệu (VD: R1, U1, C5)" }',
+      '{ "name": "Mã linh kiện (VD: LM555, LM7805) hoặc Tên tiếng Anh (VD: Resistor)", "vietnameseName": "Tên tiếng Việt (VD: Điện trở, Tụ điện, IC)", "value": "Giá trị (VD: 10k, 100uF)", "designator": "Ký hiệu (VD: R1, U1)" }',
       'Quy tắc:',
-      '1. Ưu tiên tìm "Mã linh kiện" cụ thể đưa vào "name".',
-      '2. Luôn suy luận "vietnameseName" từ ký hiệu. Ví dụ: R->Điện trở, C->Tụ điện, D->Diode, U/IC->IC, POT/VR->Biến trở.',
-      '3. KHÔNG trả về markdown code block, KHÔNG trả về text giải thích. CHỈ TRẢ VỀ JSON ARRAY.',
-      `Context: "${message || ''}"`,
+      '1. Nếu là schematic, ưu tiên đọc mã IC (như LM555, NE555) và đưa vào "name".',
+      '2. Đọc kỹ các ký hiệu linh kiện (designator) và giá trị (value) đi kèm.',
+      '3. Suy luận "vietnameseName" từ ký hiệu: R->Điện trở, C->Tụ điện, D/LED->Diode/Led, U/IC->IC.',
+      '4. CHỈ TRẢ VỀ JSON ARRAY. Không giải thích.',
+      `Context thêm từ user: "${message || ''}"`,
     ].join('\n');
 
     const requestBody: GeminiGenerateContentRequest = {
@@ -470,11 +472,14 @@ export class AiService {
           ],
         },
       ],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2000,
+      },
     };
 
     const raw = await this.callGemini(model, apiKey, requestBody);
-    return this.parsePartsFromResponse(raw);
+    return { parts: this.parsePartsFromResponse(raw), raw };
   }
 
   private parsePartsFromResponse(raw: string) {
@@ -491,18 +496,18 @@ export class AiService {
       if (Array.isArray(parsed)) {
         return parsed
           .map((p) => ({
-            name: typeof p?.name === 'string' ? p.name : undefined,
-            vietnameseName: typeof p?.vietnameseName === 'string' ? p.vietnameseName : undefined,
-            value: typeof p?.value === 'string' ? p.value : undefined,
-            package: typeof p?.package === 'string' ? p.package : undefined,
+            name: typeof p?.name === 'string' ? p.name : null,
+            vietnameseName: typeof p?.vietnameseName === 'string' ? p.vietnameseName : null,
+            value: typeof p?.value === 'string' ? p.value : null,
+            package: typeof p?.package === 'string' ? p.package : null,
             notes:
               typeof p?.designator === 'string'
                 ? p.designator
                 : typeof p?.notes === 'string'
                   ? p.notes
-                  : undefined,
+                  : null,
           }))
-          .filter((p) => p.name || p.value);
+          .filter((p) => p.name || p.value || p.vietnameseName);
       }
     } catch (e) {
       // ignore parse error
@@ -554,26 +559,34 @@ export class AiService {
       vietnameseName?: string;
     }>,
     products: AiProductCard[],
+    raw?: string,
   ) {
     const lines: string[] = [];
-    if (parts.length) {
-      lines.push('Các linh kiện phát hiện từ ảnh:');
-      parts.slice(0, 8).forEach((p) => {
-        const nameDis = p.vietnameseName || p.name;
+    if (parts.length > 0) {
+      lines.push(`Tìm thấy ${parts.length} linh kiện trong ảnh:`);
+      parts.forEach((p) => {
+        const nameDis = [p.vietnameseName, p.name].filter(Boolean).join(' / ');
         const pieces = [nameDis, p.value, p.notes].filter(Boolean).join(' - ');
         lines.push(`- ${pieces || 'Linh kiện'}`);
       });
     } else {
-      lines.push('- Không chắc linh kiện trong ảnh. Vui lòng chụp rõ hơn hoặc mô tả tên linh kiện.');
+      if (raw && raw.length > 10) {
+        lines.push('Có lỗi khi phân tích dữ liệu JSON. Dưới đây là nội dung thô AI trả về:');
+        lines.push(raw);
+      } else {
+        lines.push('- Không phân tích được linh kiện nào trong ảnh. Vui lòng chụp rõ hơn.');
+      }
     }
 
     if (products.length) {
+      lines.push('');
       lines.push('Gợi ý sản phẩm trong kho:');
       products.forEach((p) => {
         lines.push(`- ${p.name} | ${p.code || 'N/A'} | ${p.price} VND | Tồn ${p.stock}`);
       });
-    } else {
-      lines.push('- Chưa tìm thấy sản phẩm trùng khớp, bạn thử mô tả tên/mã linh kiện.');
+    } else if (parts.length > 0) {
+       lines.push('');
+       lines.push('- Chưa tìm thấy sản phẩm trong kho trùng khớp với linh kiện trong ảnh.');
     }
     return lines.join('\n');
   }
