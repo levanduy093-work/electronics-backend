@@ -107,6 +107,7 @@ export class AiService {
     }
 
     const { contextText, productCards } = await this.buildContext(dto.message, user);
+    const rerankedCards = await this.rerankProducts(dto.message, productCards, model, apiKey);
     const systemInstruction = this.buildSystemInstruction(user, contextText);
 
     const contents = this.buildContents(dto);
@@ -120,7 +121,7 @@ export class AiService {
 
     // Parse relevant codes from LLM response to filter irrelevant products from UI
     let reply = rawReply;
-    let finalCards = productCards;
+    let finalCards = rerankedCards;
     const codeMatch = rawReply.match(/RELEVANT_CODES:\s*\[(.*?)\]/);
     if (codeMatch) {
       try {
@@ -313,7 +314,7 @@ export class AiService {
         products = await this.productModel
           .find({ $and: andClauses })
           .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-          .limit(15)
+          .limit(40)
           .lean()
           .exec();
       }
@@ -324,7 +325,7 @@ export class AiService {
         products = await this.productModel
           .find(flatOr.length ? { $or: flatOr } : {})
           .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-          .limit(15)
+          .limit(40)
           .lean()
           .exec();
       }
@@ -344,7 +345,7 @@ export class AiService {
 
         parts.push(
           [
-            'SẢN PHẨM LIÊN QUAN (tối đa 15):',
+            'SẢN PHẨM LIÊN QUAN (tối đa 40):',
             ...products.map((p: any) => {
               const code = p?.code ? `code=${p.code}` : 'code=N/A';
               const cat = p?.category ? `cat=${p.category}` : 'cat=N/A';
@@ -447,6 +448,92 @@ export class AiService {
       .join('');
 
     return new RegExp(pattern, 'i');
+  }
+
+  private async rerankProducts(message: string, products: AiProductCard[], model: string, apiKey: string) {
+    if (!products?.length) return products;
+
+    const rows = products.map((p) => {
+      const code = p.code || p.productId;
+      const price = Number.isFinite(p.price) ? `${p.price} VND` : 'N/A';
+      const stock = Number.isFinite(p.stock) ? p.stock : 'N/A';
+      return `${code} | ${p.name} | ${p.category || 'N/A'} | price=${price} | stock=${stock}`;
+    });
+
+    const prompt = [
+      'Bạn là bộ lọc/rerank sản phẩm. Nhiệm vụ: nhận câu hỏi người dùng và danh sách sản phẩm (code | name | category | price | stock).',
+      'Hãy trả về một mảng JSON các code sản phẩm liên quan nhất, sắp xếp giảm dần độ phù hợp. Không giải thích.',
+      'Nếu không có sản phẩm phù hợp, trả về [].',
+      `User query: "${message}"`,
+      'Products:',
+      rows.join('\n'),
+      'Trả về JSON array, ví dụ: ["CODE1", "CODE2"]. Chỉ dùng code xuất hiện trong danh sách trên. Giới hạn tối đa 15 code.',
+    ].join('\n');
+
+    const requestBody: GeminiGenerateContentRequest = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 300 },
+    };
+
+    let codes: string[] = [];
+    try {
+      const raw = await this.callGemini(model, apiKey, requestBody);
+      codes = this.parseCodesFromRerank(raw);
+    } catch (e) {
+      return products;
+    }
+
+    if (!codes.length) return products;
+
+    const codeSet = new Set(codes.map((c) => c.toLowerCase()));
+
+    const prioritized: AiProductCard[] = [];
+    const remaining: AiProductCard[] = [];
+
+    for (const p of products) {
+      const code = (p.code || p.productId || '').toLowerCase();
+      if (code && codeSet.has(code)) {
+        prioritized.push(p);
+      } else {
+        remaining.push(p);
+      }
+    }
+
+    const orderMap = new Map<string, number>();
+    codes.forEach((c, idx) => orderMap.set(c.toLowerCase(), idx));
+
+    prioritized.sort((a, b) => {
+      const ca = (a.code || a.productId || '').toLowerCase();
+      const cb = (b.code || b.productId || '').toLowerCase();
+      return (orderMap.get(ca) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(cb) ?? Number.MAX_SAFE_INTEGER);
+    });
+
+    return [...prioritized, ...remaining].slice(0, 15);
+  }
+
+  private parseCodesFromRerank(raw: string): string[] {
+    if (!raw) return [];
+    let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.substring(start, end + 1);
+    }
+
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((c) => (typeof c === 'string' ? c.trim() : ''))
+          .filter(Boolean)
+          .slice(0, 15);
+      }
+    } catch (e) {
+      return [];
+    }
+
+    return [];
   }
 
   private async downloadImageAsBase64(url: string) {
@@ -567,7 +654,7 @@ export class AiService {
     const products = await this.productModel
       .find(flatOr.length ? { $or: flatOr } : {})
       .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-      .limit(15)
+      .limit(40)
       .lean()
       .exec();
 
