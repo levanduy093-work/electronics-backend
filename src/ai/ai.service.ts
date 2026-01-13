@@ -485,30 +485,22 @@ export class AiService {
 
     if (!codes.length) return products;
 
-    const codeSet = new Set(codes.map((c) => c.toLowerCase()));
-
-    const prioritized: AiProductCard[] = [];
-    const remaining: AiProductCard[] = [];
-
-    for (const p of products) {
-      const code = (p.code || p.productId || '').toLowerCase();
-      if (code && codeSet.has(code)) {
-        prioritized.push(p);
-      } else {
-        remaining.push(p);
-      }
-    }
-
     const orderMap = new Map<string, number>();
     codes.forEach((c, idx) => orderMap.set(c.toLowerCase(), idx));
 
-    prioritized.sort((a, b) => {
+    const byCode = products.filter((p) => {
+      const code = (p.code || p.productId || '').toLowerCase();
+      return code && orderMap.has(code);
+    });
+
+    byCode.sort((a, b) => {
       const ca = (a.code || a.productId || '').toLowerCase();
       const cb = (b.code || b.productId || '').toLowerCase();
       return (orderMap.get(ca) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(cb) ?? Number.MAX_SAFE_INTEGER);
     });
 
-    return [...prioritized, ...remaining].slice(0, 15);
+    // Only show the reranked items. If rerank returns empty, fallback was handled above.
+    return byCode.slice(0, 15);
   }
 
   private parseCodesFromRerank(raw: string): string[] {
