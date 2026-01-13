@@ -8,6 +8,8 @@ import { Order, OrderDocument } from './schemas/order.schema';
 import { TransactionsService } from '../transactions/transactions.service';
 import { Transaction, TransactionDocument } from '../transactions/schemas/transaction.schema';
 import { ShipmentsService } from '../shipments/shipments.service';
+import { ProductsService } from '../products/products.service';
+import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 @Injectable()
 export class OrdersService {
@@ -16,12 +18,19 @@ export class OrdersService {
     private readonly orderModel: Model<OrderDocument>,
     @InjectModel(Transaction.name)
     private readonly transactionModel: Model<TransactionDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
     private readonly transactionsService: TransactionsService,
     private readonly shipmentsService: ShipmentsService,
+    private readonly productsService: ProductsService,
   ) {}
 
   async create(data: CreateOrderDto, user: JwtPayload) {
     const payload = this.mapDto(data, user.sub);
+    
+    // Deduct stock for each item in the order
+    await this.deductProductStock(data.items);
+    
     const created = await this.orderModel.create(payload);
     const createdObj = this.strip(created.toObject());
 
@@ -107,6 +116,15 @@ export class OrdersService {
   }
 
   async cancel(id: string, user: JwtPayload) {
+    // Get order details before cancelling to restore stock
+    const order = await this.orderModel.findById(id).lean();
+    if (!order) throw new NotFoundException('Order not found');
+    
+    // Only restore stock if order is not already cancelled
+    if (!order.isCancelled) {
+      await this.restoreProductStock(order.items);
+    }
+    
     return this.update(
       id,
       {
@@ -230,5 +248,53 @@ export class OrdersService {
       paymentMethod,
       paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
     });
+  }
+
+  private async deductProductStock(items: any[]) {
+    if (!items || items.length === 0) return;
+
+    for (const item of items) {
+      if (!item.productId || !item.quantity) continue;
+      
+      try {
+        // Deduct stock from product
+        const productId = item.productId instanceof Types.ObjectId 
+          ? item.productId
+          : new Types.ObjectId(item.productId);
+        
+        await this.productModel.findByIdAndUpdate(
+          productId,
+          { $inc: { stock: -item.quantity } },
+          { new: true }
+        );
+      } catch (error) {
+        console.error(`Failed to deduct stock for product ${item.productId}:`, error);
+        // Don't throw error to prevent order creation failure
+      }
+    }
+  }
+
+  private async restoreProductStock(items: any[]) {
+    if (!items || items.length === 0) return;
+
+    for (const item of items) {
+      if (!item.productId || !item.quantity) continue;
+      
+      try {
+        // Restore stock to product
+        const productId = item.productId instanceof Types.ObjectId 
+          ? item.productId
+          : new Types.ObjectId(item.productId);
+        
+        await this.productModel.findByIdAndUpdate(
+          productId,
+          { $inc: { stock: item.quantity } },
+          { new: true }
+        );
+      } catch (error) {
+        console.error(`Failed to restore stock for product ${item.productId}:`, error);
+        // Don't throw error to prevent order cancellation failure
+      }
+    }
   }
 }
