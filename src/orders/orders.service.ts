@@ -31,6 +31,7 @@ export class OrdersService {
   ) {}
 
   async create(data: CreateOrderDto, user: JwtPayload) {
+    console.log('[OrdersService.create] Starting order creation', { userId: user.sub, itemsCount: data.items?.length });
     const payload = this.mapDto(data, user.sub);
     
     // Deduct stock and create order atomically to avoid overselling
@@ -39,12 +40,16 @@ export class OrdersService {
 
     try {
       await session.withTransaction(async () => {
+        console.log('[OrdersService.create] Starting transaction - deducting stock');
         await this.deductProductStock(payload.items, session);
+        console.log('[OrdersService.create] Stock deducted successfully, creating order');
 
         const [created] = await this.orderModel.create([payload], { session });
         createdObj = this.strip(created.toObject());
+        console.log('[OrdersService.create] Order created:', createdObj?.code);
       });
     } catch (error: any) {
+      console.error('[OrdersService.create] Transaction error:', error?.message);
       // Fallback for environments without replica set transactions
       const isTxnUnavailable =
         error?.code === 20 ||
@@ -52,9 +57,11 @@ export class OrdersService {
         `${error?.message || ''}`.toLowerCase().includes('transaction');
 
       if (!isTxnUnavailable) {
+        console.error('[OrdersService.create] Not a transaction error, throwing', error?.message);
         throw error;
       }
 
+      console.log('[OrdersService.create] Falling back to non-transaction mode');
       await this.deductProductStock(payload.items);
       const created = await this.orderModel.create(payload);
       createdObj = this.strip(created.toObject());
@@ -283,13 +290,22 @@ export class OrdersService {
   }
 
   private async deductProductStock(items: any[], session?: ClientSession) {
-    if (!items || items.length === 0) return;
+    if (!items || items.length === 0) {
+      console.log('[deductProductStock] No items to deduct');
+      return;
+    }
 
+    console.log('[deductProductStock] Starting stock deduction for', items.length, 'items');
     const updatedItems: { productId: Types.ObjectId; quantity: number }[] = [];
 
     try {
       for (const item of items) {
-        if (!item.productId || !item.quantity || item.quantity <= 0) continue;
+        console.log('[deductProductStock] Processing item:', { productId: item.productId?.toString?.(), quantity: item.quantity });
+        
+        if (!item.productId || !item.quantity || item.quantity <= 0) {
+          console.log('[deductProductStock] Skipping invalid item');
+          continue;
+        }
         
         const productId =
           item.productId instanceof Types.ObjectId
@@ -298,12 +314,16 @@ export class OrdersService {
 
         const product = await this.productModel.findById(productId, null, { session }).lean();
         if (!product) {
+          console.error('[deductProductStock] Product not found:', productId.toString());
           throw new NotFoundException('Product not found');
         }
 
         const availableStock =
           typeof product.stock === 'number' && !Number.isNaN(product.stock) ? product.stock : 0;
+        console.log('[deductProductStock] Current stock:', { productId: productId.toString(), name: product.name, availableStock, requested: item.quantity });
+        
         if (availableStock < item.quantity) {
+          console.error('[deductProductStock] Insufficient stock:', { productId: productId.toString(), available: availableStock, requested: item.quantity });
           throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
         }
 
@@ -314,13 +334,17 @@ export class OrdersService {
         );
 
         if (!updated) {
+          console.error('[deductProductStock] Update failed - stock condition not met:', productId.toString());
           throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
         }
 
+        console.log('[deductProductStock] Stock updated successfully:', { productId: productId.toString(), newStock: updated.stock });
         updatedItems.push({ productId, quantity: item.quantity });
       }
     } catch (error) {
+      console.error('[deductProductStock] Error during stock deduction:', error?.message);
       if (updatedItems.length) {
+        console.log('[deductProductStock] Restoring stock for', updatedItems.length, 'items');
         await this.restoreProductStock(updatedItems, true, session);
       }
 
@@ -333,8 +357,12 @@ export class OrdersService {
   }
 
   private async restoreProductStock(items: any[], silent = false, session?: ClientSession) {
-    if (!items || items.length === 0) return;
+    if (!items || items.length === 0) {
+      console.log('[restoreProductStock] No items to restore');
+      return;
+    }
 
+    console.log('[restoreProductStock] Restoring stock for', items.length, 'items');
     for (const item of items) {
       if (!item.productId || !item.quantity) continue;
       
@@ -343,13 +371,15 @@ export class OrdersService {
           ? item.productId
           : new Types.ObjectId(item.productId);
         
-        await this.productModel.findByIdAndUpdate(
+        console.log('[restoreProductStock] Restoring:', { productId: productId.toString(), quantity: item.quantity });
+        const restored = await this.productModel.findByIdAndUpdate(
           productId,
           { $inc: { stock: item.quantity, saleCount: -item.quantity } },
           { new: true, session }
         );
+        console.log('[restoreProductStock] Restored successfully:', { productId: productId.toString(), newStock: restored?.stock });
       } catch (error) {
-        console.error(`Failed to restore stock for product ${item.productId}:`, error);
+        console.error(`[restoreProductStock] Failed to restore stock for product ${item.productId}:`, error);
         // Nếu đang rollback sau khi trừ kho thất bại, tránh chặn lỗi gốc
         if (!silent) {
           throw error;
