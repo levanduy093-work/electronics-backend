@@ -296,23 +296,24 @@ export class OrdersService {
             ? item.productId
             : new Types.ObjectId(item.productId);
 
-        const product = await this.productModel.findById(productId).lean();
+        const product = await this.productModel.findById(productId, null, { session }).lean();
         if (!product) {
           throw new NotFoundException('Product not found');
         }
 
-        const availableStock = product.stock ?? 0;
+        const availableStock =
+          typeof product.stock === 'number' && !Number.isNaN(product.stock) ? product.stock : 0;
         if (availableStock < item.quantity) {
           throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
         }
 
-        const updateResult = await this.productModel.updateOne(
+        const updated = await this.productModel.findOneAndUpdate(
           { _id: productId, stock: { $gte: item.quantity } },
           { $inc: { stock: -item.quantity, saleCount: item.quantity } },
-          { session },
+          { new: true, session, lean: true },
         );
 
-        if (updateResult.modifiedCount === 0) {
+        if (!updated) {
           throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
         }
 
