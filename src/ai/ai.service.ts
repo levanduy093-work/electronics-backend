@@ -301,7 +301,7 @@ export class AiService {
     const productHints = this.extractKeywords(message);
     if (productHints.length) {
       const orClauses = productHints.map((token) => {
-        const rx = new RegExp(this.escapeRegExp(token), 'i');
+        const rx = this.buildAccentRegex(token);
         return [{ name: rx }, { code: rx }, { category: rx }, { description: rx }];
       });
 
@@ -425,6 +425,30 @@ export class AiService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  private buildAccentRegex(value: string) {
+    const accentMap: Record<string, string> = {
+      a: 'aàáạảãăằắặẳẵâầấậẩẫ',
+      e: 'eèéẹẻẽêềếệểễ',
+      i: 'iìíịỉĩ',
+      o: 'oòóọỏõôồốộổỗơờớợởỡ',
+      u: 'uùúụủũưừứựửữ',
+      y: 'yỳýỵỷỹ',
+      d: 'dđ',
+    };
+
+    const pattern = value
+      .split('')
+      .map((ch) => {
+        const lower = ch.toLowerCase();
+        const group = accentMap[lower];
+        if (group) return `[${this.escapeRegExp(group)}]`;
+        return this.escapeRegExp(ch);
+      })
+      .join('');
+
+    return new RegExp(pattern, 'i');
+  }
+
   private async downloadImageAsBase64(url: string) {
     const response = await fetch(url);
     if (!response.ok) {
@@ -536,7 +560,7 @@ export class AiService {
     if (!tokens.length) return [];
 
     const ors = tokens.map((token) => {
-      const rx = new RegExp(this.escapeRegExp(token), 'i');
+      const rx = this.buildAccentRegex(token);
       return [{ name: rx }, { code: rx }, { category: rx }, { description: rx }];
     });
     const flatOr = ors.flat();
