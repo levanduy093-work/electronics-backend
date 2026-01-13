@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtPayload } from '../common/types/jwt-payload';
@@ -29,7 +34,7 @@ export class OrdersService {
     const payload = this.mapDto(data, user.sub);
     
     // Deduct stock for each item in the order
-    await this.deductProductStock(data.items);
+    await this.deductProductStock(payload.items);
     
     const created = await this.orderModel.create(payload);
     const createdObj = this.strip(created.toObject());
@@ -253,48 +258,75 @@ export class OrdersService {
   private async deductProductStock(items: any[]) {
     if (!items || items.length === 0) return;
 
-    for (const item of items) {
-      if (!item.productId || !item.quantity) continue;
-      
-      try {
-        // Deduct stock from product
-        const productId = item.productId instanceof Types.ObjectId 
-          ? item.productId
-          : new Types.ObjectId(item.productId);
+    const updatedItems: { productId: Types.ObjectId; quantity: number }[] = [];
+
+    try {
+      for (const item of items) {
+        if (!item.productId || !item.quantity || item.quantity <= 0) continue;
         
-        await this.productModel.findByIdAndUpdate(
-          productId,
-          { $inc: { stock: -item.quantity } },
-          { new: true }
+        const productId =
+          item.productId instanceof Types.ObjectId
+            ? item.productId
+            : new Types.ObjectId(item.productId);
+
+        const product = await this.productModel.findById(productId).lean();
+        if (!product) {
+          throw new NotFoundException('Product not found');
+        }
+
+        const availableStock = product.stock ?? 0;
+        if (availableStock < item.quantity) {
+          throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
+        }
+
+        const updateResult = await this.productModel.updateOne(
+          { _id: productId, stock: { $gte: item.quantity } },
+          { $inc: { stock: -item.quantity, saleCount: item.quantity } },
         );
-      } catch (error) {
-        console.error(`Failed to deduct stock for product ${item.productId}:`, error);
-        // Don't throw error to prevent order creation failure
+
+        if (updateResult.modifiedCount === 0) {
+          throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
+        }
+
+        updatedItems.push({ productId, quantity: item.quantity });
       }
+    } catch (error) {
+      if (updatedItems.length) {
+        await this.restoreProductStock(updatedItems, true);
+      }
+
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+
+      throw new BadRequestException('Không đủ tồn kho cho sản phẩm đã chọn');
     }
   }
 
-  private async restoreProductStock(items: any[]) {
+  private async restoreProductStock(items: any[], silent = false) {
     if (!items || items.length === 0) return;
 
     for (const item of items) {
       if (!item.productId || !item.quantity) continue;
       
       try {
-        // Restore stock to product
         const productId = item.productId instanceof Types.ObjectId 
           ? item.productId
           : new Types.ObjectId(item.productId);
         
         await this.productModel.findByIdAndUpdate(
           productId,
-          { $inc: { stock: item.quantity } },
+          { $inc: { stock: item.quantity, saleCount: -item.quantity } },
           { new: true }
         );
       } catch (error) {
         console.error(`Failed to restore stock for product ${item.productId}:`, error);
-        // Don't throw error to prevent order cancellation failure
+        // Nếu đang rollback sau khi trừ kho thất bại, tránh chặn lỗi gốc
+        if (!silent) {
+          throw error;
+        }
       }
     }
   }
+
 }
