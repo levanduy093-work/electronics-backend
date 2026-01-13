@@ -26,7 +26,6 @@ export class TransactionsService {
   }
 
   async findAll() {
-    await this.backfillCodTransactions();
     const docs = await this.transactionModel.find().lean();
     return docs.map(this.strip);
   }
