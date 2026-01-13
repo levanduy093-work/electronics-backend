@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { JwtPayload } from '../common/types/jwt-payload';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
@@ -33,11 +33,38 @@ export class OrdersService {
   async create(data: CreateOrderDto, user: JwtPayload) {
     const payload = this.mapDto(data, user.sub);
     
-    // Deduct stock for each item in the order
-    await this.deductProductStock(payload.items);
-    
-    const created = await this.orderModel.create(payload);
-    const createdObj = this.strip(created.toObject());
+    // Deduct stock and create order atomically to avoid overselling
+    const session = await this.orderModel.db.startSession();
+    let createdObj: Partial<Order> | null = null;
+
+    try {
+      await session.withTransaction(async () => {
+        await this.deductProductStock(payload.items, session);
+
+        const [created] = await this.orderModel.create([payload], { session });
+        createdObj = this.strip(created.toObject());
+      });
+    } catch (error: any) {
+      // Fallback for environments without replica set transactions
+      const isTxnUnavailable =
+        error?.code === 20 ||
+        `${error?.message || ''}`.toLowerCase().includes('replica set') ||
+        `${error?.message || ''}`.toLowerCase().includes('transaction');
+
+      if (!isTxnUnavailable) {
+        throw error;
+      }
+
+      await this.deductProductStock(payload.items);
+      const created = await this.orderModel.create(payload);
+      createdObj = this.strip(created.toObject());
+    } finally {
+      await session.endSession();
+    }
+
+    if (!createdObj) {
+      throw new BadRequestException('Không thể tạo đơn hàng');
+    }
 
     if (this.isCodPayment(createdObj.payment)) {
       await this.syncCodTransaction(createdObj);
@@ -255,7 +282,7 @@ export class OrdersService {
     });
   }
 
-  private async deductProductStock(items: any[]) {
+  private async deductProductStock(items: any[], session?: ClientSession) {
     if (!items || items.length === 0) return;
 
     const updatedItems: { productId: Types.ObjectId; quantity: number }[] = [];
@@ -282,6 +309,7 @@ export class OrdersService {
         const updateResult = await this.productModel.updateOne(
           { _id: productId, stock: { $gte: item.quantity } },
           { $inc: { stock: -item.quantity, saleCount: item.quantity } },
+          { session },
         );
 
         if (updateResult.modifiedCount === 0) {
@@ -292,7 +320,7 @@ export class OrdersService {
       }
     } catch (error) {
       if (updatedItems.length) {
-        await this.restoreProductStock(updatedItems, true);
+        await this.restoreProductStock(updatedItems, true, session);
       }
 
       if (error instanceof BadRequestException || error instanceof NotFoundException) {
@@ -303,7 +331,7 @@ export class OrdersService {
     }
   }
 
-  private async restoreProductStock(items: any[], silent = false) {
+  private async restoreProductStock(items: any[], silent = false, session?: ClientSession) {
     if (!items || items.length === 0) return;
 
     for (const item of items) {
@@ -317,7 +345,7 @@ export class OrdersService {
         await this.productModel.findByIdAndUpdate(
           productId,
           { $inc: { stock: item.quantity, saleCount: -item.quantity } },
-          { new: true }
+          { new: true, session }
         );
       } catch (error) {
         console.error(`Failed to restore stock for product ${item.productId}:`, error);
