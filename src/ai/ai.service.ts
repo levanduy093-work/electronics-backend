@@ -113,7 +113,7 @@ export class AiService {
     const requestBody: GeminiGenerateContentRequest = {
       systemInstruction: { parts: [{ text: systemInstruction }] },
       contents,
-      generationConfig: { temperature: 0.4, maxOutputTokens: 600 },
+      generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
     };
 
     const rawReply = await this.callGemini(model, apiKey, requestBody);
@@ -224,7 +224,7 @@ export class AiService {
   }
 
   private buildContents(dto: AiChatDto): GeminiGenerateContentRequest['contents'] {
-    const history = (dto.history || []).slice(-12);
+    const history = (dto.history || []).slice(-20);
     const contents: GeminiGenerateContentRequest['contents'] = history.map((h) => ({
       role: h.role === 'ai' ? 'model' : 'user',
       parts: [{ text: h.content }],
@@ -313,7 +313,7 @@ export class AiService {
         products = await this.productModel
           .find({ $and: andClauses })
           .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-          .limit(5)
+          .limit(15)
           .lean()
           .exec();
       }
@@ -324,7 +324,7 @@ export class AiService {
         products = await this.productModel
           .find(flatOr.length ? { $or: flatOr } : {})
           .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-          .limit(5)
+          .limit(15)
           .lean()
           .exec();
       }
@@ -344,7 +344,7 @@ export class AiService {
 
         parts.push(
           [
-            'SẢN PHẨM LIÊN QUAN (tối đa 5):',
+            'SẢN PHẨM LIÊN QUAN (tối đa 15):',
             ...products.map((p: any) => {
               const code = p?.code ? `code=${p.code}` : 'code=N/A';
               const cat = p?.category ? `cat=${p.category}` : 'cat=N/A';
@@ -398,7 +398,6 @@ export class AiService {
       'i',
       'you',
       'me',
-      // Common Vietnamese shopping words
       'con',
       'còn',
       'hàng',
@@ -407,25 +406,18 @@ export class AiService {
       'khong',
       'co',
       'có',
-      'sp',
-      'san',
-      'pham',
-      'sản',
-      'phẩm',
       'nhieu',
       'nhiêu',
       'bao',
       'bn',
       'shop',
-      'loai',
-      'loại',
       'cai',
       'cái',
       'dang',
       'đang',
       'het',
     ]);
-    const keywords = tokens.filter((t) => t.length >= 3 && !stop.has(t)).slice(0, 4);
+    const keywords = tokens.filter((t) => t.length >= 2 && !stop.has(t)).slice(0, 8);
     return Array.from(new Set(keywords));
   }
 
@@ -551,7 +543,7 @@ export class AiService {
     const products = await this.productModel
       .find(flatOr.length ? { $or: flatOr } : {})
       .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-      .limit(5)
+      .limit(15)
       .lean()
       .exec();
 
