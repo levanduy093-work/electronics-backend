@@ -296,63 +296,68 @@ export class OrdersService {
     }
 
     console.log('[deductProductStock] Starting stock deduction for', items.length, 'items');
+    // Ensure we handle session correctly (pass undefined if null/undefined)
+    const options = session ? { session } : {};
     const updatedItems: { productId: Types.ObjectId; quantity: number }[] = [];
 
     try {
       for (const item of items) {
-        console.log('[deductProductStock] Processing item:', { productId: item.productId?.toString?.(), quantity: item.quantity });
-        
         if (!item.productId || !item.quantity || item.quantity <= 0) {
-          console.log('[deductProductStock] Skipping invalid item');
           continue;
         }
-        
+
         const productId =
           item.productId instanceof Types.ObjectId
             ? item.productId
             : new Types.ObjectId(item.productId);
 
-        const product = await this.productModel.findById(productId, null, { session }).lean();
-        if (!product) {
-          console.error('[deductProductStock] Product not found:', productId.toString());
-          throw new NotFoundException('Product not found');
-        }
-
-        const availableStock =
-          typeof product.stock === 'number' && !Number.isNaN(product.stock) ? product.stock : 0;
-        console.log('[deductProductStock] Current stock:', { productId: productId.toString(), name: product.name, availableStock, requested: item.quantity });
-        
-        if (availableStock < item.quantity) {
-          console.error('[deductProductStock] Insufficient stock:', { productId: productId.toString(), available: availableStock, requested: item.quantity });
-          throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
-        }
-
-        const updated = await this.productModel.findOneAndUpdate(
+        // Use atomic updateOne with generic session handling
+        // We check stock >= quantity in the query condition
+        const result = await this.productModel.updateOne(
           { _id: productId, stock: { $gte: item.quantity } },
           { $inc: { stock: -item.quantity, saleCount: item.quantity } },
-          { new: true, session, lean: true },
+          options,
         );
 
-        if (!updated) {
-          console.error('[deductProductStock] Update failed - stock condition not met:', productId.toString());
-          throw new BadRequestException(`Sản phẩm ${product.name} không đủ hàng`);
-        }
+        // If modifiedCount is 0, it means either product not found OR condition (stock >= quantity) failed
+        if (result.modifiedCount !== 1) {
+          console.error('[deductProductStock] Update failed, checking reason for:', productId.toString());
+          
+          // Find product to give specific error message
+          const product = await this.productModel.findById(productId, null, options).lean();
+          
+          if (!product) {
+            throw new NotFoundException('Sản phẩm không tồn tại');
+          }
 
-        console.log('[deductProductStock] Stock updated successfully:', { productId: productId.toString(), newStock: updated.stock });
+          const availableStock = product.stock ?? 0;
+          console.error('[deductProductStock] Insufficient stock:', {
+            productId: productId.toString(),
+            name: product.name,
+            available: availableStock,
+            requested: item.quantity,
+          });
+          
+          throw new BadRequestException(
+            `Sản phẩm ${product.name} không đủ số lượng (Còn: ${availableStock}, Đặt: ${item.quantity})`
+          );
+        }
+        
         updatedItems.push({ productId, quantity: item.quantity });
+        console.log('[deductProductStock] Stock updated successfully for:', productId.toString());
       }
     } catch (error) {
       console.error('[deductProductStock] Error during stock deduction:', error?.message);
-      if (updatedItems.length) {
-        console.log('[deductProductStock] Restoring stock for', updatedItems.length, 'items');
-        await this.restoreProductStock(updatedItems, true, session);
+      // Manual rollback if needed (critical for non-transaction mode)
+      if (updatedItems.length > 0) {
+        console.log('[deductProductStock] Restoring stock for', updatedItems.length, 'items due to error');
+        try {
+           await this.restoreProductStock(updatedItems, true, session);
+        } catch (restoreError) {
+           console.error('[deductProductStock] Critical: Failed to restore stock', restoreError);
+        }
       }
-
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new BadRequestException('Không đủ tồn kho cho sản phẩm đã chọn');
+      throw error;
     }
   }
 
