@@ -100,7 +100,9 @@ export class AiService {
     // If image is provided, try vision flow first
     if (dto.imageUrl) {
       const { parts, raw } = await this.extractPartsFromImage(dto.message, dto.imageUrl, apiKey, model);
-      const productCards = await this.searchProductsByParts(parts);
+      // Pass apiKey and model to AI-filter products
+      const allCards = await this.searchProductsByParts(parts, apiKey, model);
+      const productCards = allCards.filter((card) => card !== null) as AiProductCard[];
       const reply = this.composeVisionReply(parts, productCards, raw);
       const actions = this.buildActions(dto.message, productCards, user.sub);
       return { reply, cards: productCards, actions };
@@ -628,6 +630,8 @@ export class AiService {
 
   private async searchProductsByParts(
     parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
+    apiKey?: string,
+    model?: string,
   ) {
     const tokens = parts
       .flatMap((p) => [p.name, p.value, p.vietnameseName])
@@ -645,11 +649,27 @@ export class AiService {
     const flatOr = ors.flat();
     const products = await this.productModel
       .find(flatOr.length ? { $or: flatOr } : {})
-      .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
-      .limit(40)
+      .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1, description: 1 })
+      .limit(60)
       .lean()
       .exec();
 
+    if (!products.length) return [];
+
+    // **Bước 3: Lọc qua AI để đảm bảo chỉ lấy linh kiện đúng/tương tự (không fallback bằng text)**
+    if (apiKey && model) {
+      try {
+        const filteredProducts = await this.filterProductsByAI(parts, products, apiKey, model);
+        // Trả về đúng kết quả AI quyết định (kể cả rỗng)
+        return Array.isArray(filteredProducts) ? filteredProducts : [];
+      } catch (err) {
+        console.warn('Error filtering products by AI:', err);
+        // Khi AI lỗi, không trả về text-based fallback
+        return [];
+      }
+    }
+
+    // Nếu không có AI key/model, dùng kết quả tìm kiếm thô (đường lui khi dev)
     return products.map((p) => ({
       productId: p._id.toString(),
       name: p.name,
@@ -659,6 +679,101 @@ export class AiService {
       code: p.code,
       image: Array.isArray(p.images) ? p.images[0] : undefined,
     }));
+  }
+
+  private async filterProductsByAI(
+    parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
+    products: any[],
+    apiKey: string,
+    model: string,
+  ) {
+    const partsJson = JSON.stringify(parts.map((p) => ({ name: p.name, value: p.value, vietnameseName: p.vietnameseName })));
+    const productsJson = JSON.stringify(
+      products.map((p) => ({
+        id: p._id.toString(),
+        name: p.name,
+        code: p.code,
+        category: p.category,
+        description: p.description,
+      })),
+    );
+
+    const prompt = `Bạn là chuyên gia linh kiện điện tử. 
+Dưới đây là danh sách linh kiện được phát hiện từ ảnh và danh sách sản phẩm trong hệ thống.
+
+Linh kiện từ ảnh:
+${partsJson}
+
+Sản phẩm trong kho:
+${productsJson}
+
+Nhiệm vụ:
+1. So sánh mỗi linh kiện từ ảnh với danh sách sản phẩm
+2. Chỉ trả về những sản phẩm THỰC SỰ KHỚP hoặc TƯƠNG TỰ với linh kiện trong ảnh
+3. Tránh những sản phẩm không liên quan
+4. Trả về JSON array chứa các object {id: "product_id", reason: "lý do khớp"}
+5. Nếu không có sản phẩm nào khớp, trả về []
+
+Lưu ý:
+- LM555 khớp với IC / LM555 trong kho
+- Resistor 10k khớp với Điện trở có giá trị 10k
+- Capacitor 100µF khớp với Tụ điện có giá trị 100µF
+- KHÔNG khớp những sản phẩm hoàn toàn khác loại
+
+Chỉ trả về JSON ARRAY. Không giải thích.`;
+
+    const requestBody: GeminiGenerateContentRequest = {
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 2000,
+      },
+    };
+
+    const raw = await this.callGemini(model, apiKey, requestBody);
+    const filtered = this.parseFilteredProductsResponse(raw, products);
+    return filtered;
+  }
+
+  private parseFilteredProductsResponse(raw: string, allProducts: any[]) {
+    try {
+      let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const firstBracket = cleaned.indexOf('[');
+      const lastBracket = cleaned.lastIndexOf(']');
+
+      if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+        cleaned = cleaned.substring(firstBracket, lastBracket + 1);
+      } else {
+        return [];
+      }
+
+      const filtered = JSON.parse(cleaned);
+      if (!Array.isArray(filtered)) return [];
+
+      return filtered
+        .map((item) => {
+          const prod = allProducts.find((p) => p._id.toString() === item.id);
+          if (!prod) return null;
+          return {
+            productId: prod._id.toString(),
+            name: prod.name,
+            price: prod.price?.salePrice ?? prod.price?.originalPrice ?? 0,
+            stock: typeof prod.stock === 'number' ? prod.stock : 0,
+            category: prod.category,
+            code: prod.code,
+            image: Array.isArray(prod.images) ? prod.images[0] : undefined,
+          };
+        })
+        .filter(Boolean);
+    } catch (e) {
+      console.warn('Error parsing filtered products:', e);
+      return [];
+    }
   }
 
   private composeVisionReply(
@@ -673,32 +788,55 @@ export class AiService {
     raw?: string,
   ) {
     const lines: string[] = [];
+    
+    // **Bước 1: Báo linh kiện tìm thấy từ ảnh**
     if (parts.length > 0) {
-      lines.push(`Tìm thấy ${parts.length} linh kiện trong ảnh:`);
+      lines.push(`📸 Phân tích ảnh: Tìm thấy ${parts.length} linh kiện`);
+      lines.push('');
       parts.forEach((p) => {
         const nameDis = [p.vietnameseName, p.name].filter(Boolean).join(' / ');
         const pieces = [nameDis, p.value, p.notes].filter(Boolean).join(' - ');
-        lines.push(`- ${pieces || 'Linh kiện'}`);
+        lines.push(`• ${pieces || 'Linh kiện'}`);
       });
+      lines.push('');
     } else {
       if (raw && raw.length > 10) {
-        lines.push('Có lỗi khi phân tích dữ liệu JSON. Dưới đây là nội dung thô AI trả về:');
+        lines.push('❌ Không thể phân tích JSON từ ảnh. Dữ liệu không rõ ràng:');
         lines.push(raw);
       } else {
-        lines.push('- Không phân tích được linh kiện nào trong ảnh. Vui lòng chụp rõ hơn.');
+        lines.push('❌ Không phát hiện linh kiện nào trong ảnh. Vui lòng:');
+        lines.push('• Chụp rõ hơn');
+        lines.push('• Chụp sơ đồ mạch hoặc hình ảnh linh kiện thực tế');
+        lines.push('• Đảm bảo sáng đủ');
       }
+      return lines.join('\n');
     }
 
-    if (products.length) {
+    // **Bước 2: Báo sản phẩm tìm được trong kho**
+    if (products.length > 0) {
+      lines.push('✅ Sản phẩm tìm thấy trong kho:');
       lines.push('');
-      lines.push('Gợi ý sản phẩm trong kho:');
       products.forEach((p) => {
-        lines.push(`- ${p.name} | ${p.code || 'N/A'} | ${p.price} VND | Tồn ${p.stock}`);
+        const stock = p.stock > 0 ? `✓ Còn ${p.stock}` : '❌ Hết hàng';
+        lines.push(`• ${p.name} (${p.code || 'N/A'}) - ${p.price} VND - ${stock}`);
       });
-    } else if (parts.length > 0) {
-       lines.push('');
-       lines.push('- Chưa tìm thấy sản phẩm trong kho trùng khớp với linh kiện trong ảnh.');
+    } else {
+      // **Bước 3: Báo thiếu linh kiện**
+      lines.push('⚠️ CẢNH BÁO: Thiếu linh kiện trong kho');
+      lines.push('');
+      lines.push('Linh kiện cần tìm:');
+      parts.forEach((p) => {
+        const nameDis = [p.vietnameseName, p.name].filter(Boolean).join(' / ');
+        const pieces = [nameDis, p.value].filter(Boolean).join(' - ');
+        lines.push(`• ${pieces || 'Linh kiện'}`);
+      });
+      lines.push('');
+      lines.push('Giải pháp:');
+      lines.push('1. Liên hệ bộ phận kỹ thuật để nhập hàng');
+      lines.push('2. Tìm linh kiện thay thế tương đương');
+      lines.push('3. Kiểm tra lại danh sách linh kiện cần thiết');
     }
+
     return lines.join('\n');
   }
 
