@@ -93,6 +93,39 @@ export class ProductsService implements OnModuleInit {
     return this.strip(doc);
   }
 
+  async findRelated(id: string) {
+    const product = await this.productModel.findById(id).lean();
+    if (!product) throw new NotFoundException('Product not found');
+
+    const pipeline: any[] = [
+       { $match: { _id: { $ne: new Types.ObjectId(id) } } }
+    ];
+    
+    if (product.category) {
+       pipeline.push({ $match: { category: product.category } });
+    }
+    
+    pipeline.push({ $limit: 6 });
+    pipeline.push(...this.buildReviewStatsPipeline());
+    pipeline.push({ $project: { reviewStats: 0 } });
+    
+    let docs = await this.productModel.aggregate(pipeline).exec();
+    
+    if (docs.length < 4) {
+       const excludeIds = [new Types.ObjectId(id), ...docs.map(d => d._id)];
+       const morePipeline = [
+          { $match: { _id: { $nin: excludeIds } } },
+          { $limit: 6 - docs.length },
+          ...this.buildReviewStatsPipeline(),
+          { $project: { reviewStats: 0 } }
+       ];
+       const more = await this.productModel.aggregate(morePipeline).exec();
+       docs = [...docs, ...more];
+    }
+
+    return docs.map(this.strip);
+  }
+
   async update(id: string, data: UpdateProductDto) {
     const { averageRating, reviewCount, saleCount, ...payload } = data;
     if (payload.images) {

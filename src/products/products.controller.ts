@@ -31,6 +31,12 @@ export class ProductsController {
     return this.productsService.findOne(id);
   }
 
+  @Get(':id/related')
+  @Public()
+  findRelated(@Param('id', ParseObjectIdPipe) id: string) {
+    return this.productsService.findRelated(id);
+  }
+
   @Patch(':id')
   @Roles('admin')
   update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateProductDto) {
