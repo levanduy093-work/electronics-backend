@@ -58,3 +58,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Security audit reports
 SECURITY_AUDIT_REPORT.md
+
+# Firebase / Service Accounts
+serviceAccountKey.json

@@ -203,6 +203,15 @@ export class UsersService {
     return this.getFavorites(userId);
   }
 
+  async addFcmToken(userId: string, token: string) {
+    if (!token) return;
+    await this.userModel.updateOne(
+      { _id: userId },
+      { $addToSet: { fcmTokens: token } },
+    );
+    return { success: true };
+  }
+
   async removeFavorite(userId: string, productId: string) {
     await this.userModel.updateOne(
       { _id: userId },

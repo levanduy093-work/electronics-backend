@@ -7,6 +7,7 @@ import { NotificationTarget, NotificationTargetDocument } from './schemas/notifi
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { FirebaseService } from '../common/firebase/firebase.service';
 
 export type NotificationView = {
   id: string;
@@ -36,7 +37,10 @@ export class NotificationsService {
     private readonly userNotificationStatusModel: Model<UserNotificationStatusDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    private readonly firebaseService: FirebaseService,
   ) {}
+// ... (rest of the file until applyTargetsAndStatuses)
+
 
   async findForUser(userId: string): Promise<NotificationView[]> {
     const userObjectId = new Types.ObjectId(userId);
@@ -251,13 +255,16 @@ export class NotificationsService {
     sendAt?: Date,
     expiresAt?: Date,
   ) {
+    const notification = await this.notificationModel.findById(notificationId).lean();
+    if (!notification) return;
+
     if (target.scope === 'all_users') {
       await this.notificationTargetModel.create({
         notification_id: notificationId,
         scope: 'all_users',
       });
 
-      const users = await this.userModel.find({}, { _id: 1 }).lean();
+      const users = await this.userModel.find({}, { _id: 1, fcmTokens: 1 }).lean();
       if (users.length) {
         const statuses = users.map((u) => ({
           notification_id: notificationId,
@@ -267,6 +274,12 @@ export class NotificationsService {
           expires_at: expiresAt,
         }));
         await this.userNotificationStatusModel.insertMany(statuses);
+
+        // Send Push Notifications
+        const tokens = users.flatMap(u => u.fcmTokens || []).filter(Boolean);
+        if (tokens.length) {
+           await this.firebaseService.sendToDevice(tokens, notification.title, notification.body, notification.metadata as any);
+        }
       }
       return;
     }
@@ -309,5 +322,12 @@ export class NotificationsService {
         expires_at: expiresAt,
       })),
     );
+
+    // Send Push Notifications to specific users
+    const targetUsers = await this.userModel.find({ _id: { $in: uniqueIds } }, { fcmTokens: 1 }).lean();
+    const tokens = targetUsers.flatMap(u => u.fcmTokens || []).filter(Boolean);
+    if (tokens.length) {
+       await this.firebaseService.sendToDevice(tokens, notification.title, notification.body, notification.metadata as any);
+    }
   }
 }

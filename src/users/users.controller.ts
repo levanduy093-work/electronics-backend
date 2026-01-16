@@ -61,6 +61,11 @@ export class UsersController {
     return this.usersService.updateSelf(user.sub, dto);
   }
 
+  @Post('me/fcm-token')
+  updateFcmToken(@CurrentUser() user: JwtPayload, @Body() body: { token: string }) {
+    return this.usersService.addFcmToken(user.sub, body.token);
+  }
+
   @Post('me/addresses')
   addMyAddress(@CurrentUser() user: JwtPayload, @Body() address: AddressDto) {
     return this.usersService.addAddress(user.sub, address);

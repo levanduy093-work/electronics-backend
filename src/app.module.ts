@@ -24,6 +24,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
 import { BannersModule } from './banners/banners.module';
+import { FirebaseModule } from './common/firebase/firebase.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { BannersModule } from './banners/banners.module';
     EventsModule,
     UploadModule,
     BannersModule,
+    FirebaseModule,
   ],
   providers: [
     {

@@ -9,6 +9,7 @@ import {
   UserNotificationStatusSchema,
 } from './schemas/user-notification-status.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
       { name: UserNotificationStatus.name, schema: UserNotificationStatusSchema },
       { name: User.name, schema: UserSchema },
     ]),
+    UsersModule,
   ],
   controllers: [NotificationsController],
   providers: [NotificationsService],
