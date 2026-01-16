@@ -10,14 +10,11 @@ import { EventsGateway } from '../events/events.gateway';
 export class ProductsService implements OnModuleInit {
   private readonly logger = new Logger(ProductsService.name);
 
-  private keepLatestImage(images?: string[]) {
+  private cleanImages(images?: string[]) {
     if (!images || !images.length) return [];
-    const cleaned = images
+    return images
       .map((url) => (url || '').trim())
       .filter(Boolean);
-    if (!cleaned.length) return [];
-    const latest = cleaned[cleaned.length - 1];
-    return [latest];
   }
 
   constructor(
@@ -63,7 +60,9 @@ export class ProductsService implements OnModuleInit {
 
   async create(data: CreateProductDto) {
     const { averageRating, reviewCount, saleCount, ...payload } = data;
-    payload.images = this.keepLatestImage(payload.images);
+    if (payload.images) {
+      payload.images = this.cleanImages(payload.images);
+    }
     const created = await this.productModel.create(payload);
     return this.strip(created.toObject());
   }
@@ -129,7 +128,7 @@ export class ProductsService implements OnModuleInit {
   async update(id: string, data: UpdateProductDto) {
     const { averageRating, reviewCount, saleCount, ...payload } = data;
     if (payload.images) {
-      payload.images = this.keepLatestImage(payload.images);
+      payload.images = this.cleanImages(payload.images);
     }
     const doc = await this.productModel
       .findByIdAndUpdate(id, payload, { new: true, lean: true })
