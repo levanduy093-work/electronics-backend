@@ -27,6 +27,12 @@ export class Product {
   @Prop({ type: Map, of: String, default: {} })
   specs?: Record<string, string>;
 
+  @Prop({ type: [String], default: [] })
+  options?: string[];
+
+  @Prop({ type: [String], default: [] })
+  classifications?: string[];
+
   @Prop({ type: Price, required: true })
   price: Price;
 

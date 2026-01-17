@@ -45,6 +45,16 @@ export class CreateProductDto {
   })
   specs?: Record<string, string>;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  options?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  classifications?: string[];
+
   @ValidateNested()
   @Type(() => PriceDto)
   price: PriceDto;
