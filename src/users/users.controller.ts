@@ -112,6 +112,25 @@ export class UsersController {
     return this.usersService.removeFavorite(user.sub, productId);
   }
 
+  // Search History
+  @Get('me/search-history')
+  getMySearchHistory(@CurrentUser() user: JwtPayload) {
+    return this.usersService.getSearchHistory(user.sub);
+  }
+
+  @Post('me/search-history')
+  saveMySearchHistory(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { queries: string[] },
+  ) {
+    return this.usersService.saveSearchHistory(user.sub, body.queries || []);
+  }
+
+  @Delete('me/search-history')
+  clearMySearchHistory(@CurrentUser() user: JwtPayload) {
+    return this.usersService.clearSearchHistory(user.sub);
+  }
+
   // Admin endpoints
   @Roles('admin')
   @Post()

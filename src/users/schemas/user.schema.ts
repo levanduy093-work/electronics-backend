@@ -83,6 +83,9 @@ export class User {
 
   @Prop({ type: [MongooseSchema.Types.ObjectId], ref: 'products', default: [] })
   favorites: Types.ObjectId[];
+
+  @Prop({ type: [String], default: [] })
+  searchHistory: string[];
 }
 
 export type UserDocument = HydratedDocument<User>;

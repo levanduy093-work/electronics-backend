@@ -221,6 +221,60 @@ export class UsersService {
     return this.getFavorites(userId);
   }
 
+  // Search History methods
+  async getSearchHistory(userId: string) {
+    const user = await this.userModel.findById(userId).lean();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    // Xử lý trường hợp field searchHistory chưa tồn tại trong documents cũ
+    const searchHistory = (user as any).searchHistory;
+    return {
+      queries: Array.isArray(searchHistory) ? searchHistory : [],
+      updatedAt: (user as any).updatedAt,
+    };
+  }
+
+  async saveSearchHistory(userId: string, queries: string[]) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    
+    // Giới hạn 20 queries mới nhất
+    const limitedQueries = queries.slice(0, 20);
+    
+    // Đảm bảo field searchHistory tồn tại (cho các documents cũ)
+    if (!user.searchHistory) {
+      user.searchHistory = [];
+    }
+    
+    user.searchHistory = limitedQueries;
+    await user.save();
+    
+    return {
+      queries: user.searchHistory || [],
+      updatedAt: (user as any).updatedAt,
+    };
+  }
+
+  async clearSearchHistory(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    
+    // Đảm bảo field searchHistory tồn tại (cho các documents cũ)
+    if (!user.searchHistory) {
+      user.searchHistory = [];
+    } else {
+      user.searchHistory = [];
+    }
+    await user.save();
+    
+    return { success: true };
+  }
+
   private toSafeUser = (user: Partial<User>) => {
     // Hide password hash when returning to clients.
     const { passwordHashed, __v, ...rest } = user as Partial<User & { __v?: number }>;
