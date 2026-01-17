@@ -62,6 +62,12 @@ class OrderItem {
 
   @Prop({ required: true })
   totalPrice: number;
+
+  @Prop()
+  selectedOption?: string;
+
+  @Prop()
+  selectedClassification?: string;
 }
 
 @Schema({ collection: 'orders', timestamps: true })

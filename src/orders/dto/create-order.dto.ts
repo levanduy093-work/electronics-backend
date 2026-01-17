@@ -80,6 +80,14 @@ class OrderItemDto {
 
   @IsNumber()
   totalPrice: number;
+
+  @IsOptional()
+  @IsString()
+  selectedOption?: string;
+
+  @IsOptional()
+  @IsString()
+  selectedClassification?: string;
 }
 
 export class CreateOrderDto {
