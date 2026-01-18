@@ -1,4 +1,10 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateVoucherDto {
   @IsString()

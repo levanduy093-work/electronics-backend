@@ -23,5 +23,8 @@ export class UserNotificationStatus {
   expires_at?: Date;
 }
 
-export type UserNotificationStatusDocument = HydratedDocument<UserNotificationStatus>;
-export const UserNotificationStatusSchema = SchemaFactory.createForClass(UserNotificationStatus);
+export type UserNotificationStatusDocument =
+  HydratedDocument<UserNotificationStatus>;
+export const UserNotificationStatusSchema = SchemaFactory.createForClass(
+  UserNotificationStatus,
+);

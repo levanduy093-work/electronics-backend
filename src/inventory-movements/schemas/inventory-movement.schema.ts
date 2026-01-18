@@ -17,4 +17,5 @@ export class InventoryMovement {
 }
 
 export type InventoryMovementDocument = HydratedDocument<InventoryMovement>;
-export const InventoryMovementSchema = SchemaFactory.createForClass(InventoryMovement);
+export const InventoryMovementSchema =
+  SchemaFactory.createForClass(InventoryMovement);

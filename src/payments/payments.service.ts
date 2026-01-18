@@ -8,7 +8,10 @@ import { CreateVnpayPaymentDto } from './dto/create-vnpay-payment.dto';
 import { OrdersService } from '../orders/orders.service';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
 import { TransactionsService } from '../transactions/transactions.service';
-import { Transaction, TransactionDocument } from '../transactions/schemas/transaction.schema';
+import {
+  Transaction,
+  TransactionDocument,
+} from '../transactions/schemas/transaction.schema';
 
 type VnpayConfig = {
   tmnCode: string;
@@ -29,19 +32,27 @@ export class PaymentsService {
     private readonly transactionModel: Model<TransactionDocument>,
   ) {}
 
-  async createVnpayPayment(dto: CreateVnpayPaymentDto, user: JwtPayload, clientIp: string) {
+  async createVnpayPayment(
+    dto: CreateVnpayPaymentDto,
+    user: JwtPayload,
+    clientIp: string,
+  ) {
     const config = this.getVnpayConfig();
     const payload = {
       ...dto,
       payment: 'VNPAY',
       paymentStatus: 'pending',
-      status: dto.status?.ordered ? dto.status : { ...(dto.status || {}), ordered: new Date().toISOString() },
+      status: dto.status?.ordered
+        ? dto.status
+        : { ...(dto.status || {}), ordered: new Date().toISOString() },
     };
 
     const order = await this.ordersService.create(payload, user);
     const orderId = (order as any)._id?.toString?.();
     if (!orderId) {
-      throw new BadRequestException('Không xác định được mã đơn hàng để khởi tạo thanh toán');
+      throw new BadRequestException(
+        'Không xác định được mã đơn hàng để khởi tạo thanh toán',
+      );
     }
     const txnRef = order.code || orderId;
     const amount = Number((order as any).totalPrice || dto.totalPrice);
@@ -71,7 +82,9 @@ export class PaymentsService {
     return {
       paymentUrl,
       order,
-      transactionId: transaction ? (transaction as any)._id?.toString() : undefined,
+      transactionId: transaction
+        ? (transaction as any)._id?.toString()
+        : undefined,
       paymentCode: txnRef,
     };
   }
@@ -89,7 +102,11 @@ export class PaymentsService {
 
     const status = query['vnp_ResponseCode'] === '00' ? 'paid' : 'failed';
     const amount = Number(query['vnp_Amount'] || 0) / 100;
-    await this.markPayment(order, status, this.parseVnpDate(query['vnp_PayDate']));
+    await this.markPayment(
+      order,
+      status,
+      this.parseVnpDate(query['vnp_PayDate']),
+    );
 
     return {
       code: query['vnp_ResponseCode'],
@@ -114,11 +131,18 @@ export class PaymentsService {
     }
 
     if (order.paymentStatus === 'paid') {
-      return { RspCode: '02', Message: 'This order has been updated to the payment status' };
+      return {
+        RspCode: '02',
+        Message: 'This order has been updated to the payment status',
+      };
     }
 
     const status = query['vnp_ResponseCode'] === '00' ? 'paid' : 'failed';
-    await this.markPayment(order, status, this.parseVnpDate(query['vnp_PayDate']));
+    await this.markPayment(
+      order,
+      status,
+      this.parseVnpDate(query['vnp_PayDate']),
+    );
 
     return { RspCode: '00', Message: 'Success' };
   }
@@ -133,7 +157,9 @@ export class PaymentsService {
     return {
       tmnCode,
       hashSecret,
-      url: this.configService.get<string>('VNP_URL') || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+      url:
+        this.configService.get<string>('VNP_URL') ||
+        'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
       returnUrl:
         this.configService.get<string>('VNP_RETURN_URL') ||
         `${this.configService.get<string>('APP_URL') || 'http://localhost:3000'}/payments/vnpay/return`,
@@ -183,13 +209,21 @@ export class PaymentsService {
   private toQueryString(params: Record<string, string | number>) {
     return Object.keys(params)
       .sort()
-      .map((key) => `${key}=${encodeURIComponent(params[key]).replace(/%20/g, '+')}`)
+      .map(
+        (key) =>
+          `${key}=${encodeURIComponent(params[key]).replace(/%20/g, '+')}`,
+      )
       .join('&');
   }
 
-  private buildSecureHash(params: Record<string, string | number>, hashSecret: string) {
+  private buildSecureHash(
+    params: Record<string, string | number>,
+    hashSecret: string,
+  ) {
     const signData = this.toQueryString(params);
-    return createHmac('sha512', hashSecret).update(Buffer.from(signData, 'utf-8')).digest('hex');
+    return createHmac('sha512', hashSecret)
+      .update(Buffer.from(signData, 'utf-8'))
+      .digest('hex');
   }
 
   private verifySignature(query: Record<string, string>, hashSecret: string) {
@@ -211,11 +245,20 @@ export class PaymentsService {
     return order;
   }
 
-  private async markPayment(order: Partial<Order>, status: string, paidAt?: Date) {
-    const orderId = (order as any)._id?.toString?.() || (order as any).id || (order as any)._id;
+  private async markPayment(
+    order: Partial<Order>,
+    status: string,
+    paidAt?: Date,
+  ) {
+    const orderId =
+      (order as any)._id?.toString?.() ||
+      (order as any).id ||
+      (order as any)._id;
     if (!orderId) return;
 
-    await this.orderModel.findByIdAndUpdate(orderId, { paymentStatus: status }).lean();
+    await this.orderModel
+      .findByIdAndUpdate(orderId, { paymentStatus: status })
+      .lean();
 
     const orderUserId = (order as any).userId;
     const orderAmount = (order as any).totalPrice || 0;
@@ -224,7 +267,9 @@ export class PaymentsService {
       .lean();
 
     if (existing?._id) {
-      await this.transactionModel.findByIdAndUpdate(existing._id, { status, paidAt }, { lean: true }).exec();
+      await this.transactionModel
+        .findByIdAndUpdate(existing._id, { status, paidAt }, { lean: true })
+        .exec();
     } else {
       await this.transactionModel.create({
         orderId: new Types.ObjectId(orderId),

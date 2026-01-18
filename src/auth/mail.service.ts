@@ -19,7 +19,9 @@ export class MailService {
     const secure = secureFlag ? secureFlag === 'true' : port === 465;
 
     if (!host || !port || !user || !pass || !this.from) {
-      throw new Error('SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM must be provided for OTP email');
+      throw new Error(
+        'SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM must be provided for OTP email',
+      );
     }
 
     this.transporter = nodemailer.createTransport({

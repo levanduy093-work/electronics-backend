@@ -1,9 +1,19 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtPayload } from '../common/types/jwt-payload';
-import { ChatSession, ChatSessionDocument } from './schemas/chat-session.schema';
-import { CreateChatSessionDto, ChatMessageDto } from './dto/create-chat-session.dto';
+import {
+  ChatSession,
+  ChatSessionDocument,
+} from './schemas/chat-session.schema';
+import {
+  CreateChatSessionDto,
+  ChatMessageDto,
+} from './dto/create-chat-session.dto';
 import { UpdateChatSessionDto } from './dto/update-chat-session.dto';
 
 @Injectable()
@@ -23,7 +33,8 @@ export class ChatService {
   }
 
   async findAll(user: JwtPayload) {
-    const filter = user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    const filter =
+      user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
     const docs = await this.chatModel.find(filter).lean();
     return docs.map(this.strip);
   }
@@ -75,7 +86,10 @@ export class ChatService {
     },
   });
 
-  private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {
+  private ensureOwnerOrAdmin(
+    ownerId: Types.ObjectId | undefined,
+    user: JwtPayload,
+  ) {
     if (user.role === 'admin') return;
     if (!ownerId || ownerId.toString() !== user.sub) {
       throw new ForbiddenException('Access denied');

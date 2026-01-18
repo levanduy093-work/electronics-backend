@@ -12,12 +12,54 @@ import { Model } from 'mongoose';
 import type { JwtPayload } from '../common/types/jwt-payload';
 import { CartsService } from '../carts/carts.service';
 import { OrdersService } from '../orders/orders.service';
+import { OrderDocument } from '../orders/schemas/order.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { UsersService } from '../users/users.service';
 import { randomUUID } from 'crypto';
 import { AiChatDto } from './dto/ai-chat.dto';
 import { AiConfirmDto } from './dto/ai-confirm.dto';
 import { Buffer } from 'buffer';
+
+// Types for order context (lean query result)
+interface OrderContext {
+  _id?: unknown;
+  code?: string;
+  createdAt?: Date | string;
+  status?: {
+    ordered?: Date | string;
+    shipped?: Date | string;
+  };
+  isCancelled?: boolean;
+  totalPrice?: number;
+  payment?: string;
+  paymentStatus?: string;
+}
+
+// Types for address context
+interface AddressContext {
+  name?: string;
+  phone?: string;
+  street?: string;
+  ward?: string;
+  district?: string;
+  city?: string;
+  type?: string;
+  isDefault?: boolean;
+}
+
+// Types for product context (lean query result)
+interface ProductContext {
+  _id: unknown;
+  name?: string;
+  code?: string;
+  category?: string;
+  price?: {
+    originalPrice?: number;
+    salePrice?: number;
+  };
+  stock?: number;
+  images?: string[];
+}
 
 type GeminiGenerateContentRequest = {
   systemInstruction?: { parts: Array<{ text: string }> };
@@ -56,14 +98,13 @@ type AiProductCard = {
   code?: string;
 };
 
-type AiAction =
-  | {
-      type: 'ADD_TO_CART';
-      payload: { productId: string; quantity: number };
-      requiresConfirmation: boolean;
-      confirmationId?: string;
-      note?: string;
-    };
+type AiAction = {
+  type: 'ADD_TO_CART';
+  payload: { productId: string; quantity: number };
+  requiresConfirmation: boolean;
+  confirmationId?: string;
+  note?: string;
+};
 
 type PendingAction = {
   id: string;
@@ -92,24 +133,41 @@ export class AiService {
 
     const apiKey = this.config.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
-      throw new ServiceUnavailableException('AI chưa được cấu hình (thiếu GEMINI_API_KEY)');
+      throw new ServiceUnavailableException(
+        'AI chưa được cấu hình (thiếu GEMINI_API_KEY)',
+      );
     }
 
     const model = this.config.get<string>('GEMINI_MODEL') || 'gemini-1.5-flash';
 
     // If image is provided, try vision flow first
     if (dto.imageUrl) {
-      const { parts, raw } = await this.extractPartsFromImage(dto.message, dto.imageUrl, apiKey, model);
+      const { parts, raw } = await this.extractPartsFromImage(
+        dto.message,
+        dto.imageUrl,
+        apiKey,
+        model,
+      );
       // Pass apiKey and model to AI-filter products
       const allCards = await this.searchProductsByParts(parts, apiKey, model);
-      const productCards = allCards.filter((card) => card !== null) as AiProductCard[];
+      const productCards = allCards.filter(
+        (card) => card !== null,
+      ) as AiProductCard[];
       const reply = this.composeVisionReply(parts, productCards, raw);
       const actions = this.buildActions(dto.message, productCards, user.sub);
       return { reply, cards: productCards, actions };
     }
 
-    const { contextText, productCards } = await this.buildContext(dto.message, user);
-    const rerankedCards = await this.rerankProducts(dto.message, productCards, model, apiKey);
+    const { contextText, productCards } = await this.buildContext(
+      dto.message,
+      user,
+    );
+    const rerankedCards = await this.rerankProducts(
+      dto.message,
+      productCards,
+      model,
+      apiKey,
+    );
     const systemInstruction = this.buildSystemInstruction(user, contextText);
 
     const contents = this.buildContents(dto);
@@ -135,7 +193,9 @@ export class AiService {
 
         if (codes.length > 0) {
           // If the AI explicitly identified relevant codes, filter the cards
-          finalCards = productCards.filter((p) => p.code && codes.includes(p.code));
+          finalCards = productCards.filter(
+            (p) => p.code && codes.includes(p.code),
+          );
         } else {
           // AI returned empty list [] -> user likely asked something else or no product matched
           // But if we have productCards from search, maybe we should keep them if AI didn't mean to filter all?
@@ -143,7 +203,7 @@ export class AiService {
           // So if [], we should probably hide cards to respect "Nó chỉ nên hiển thị đúng cái nó trả lời".
           finalCards = [];
         }
-      } catch (e) {
+      } catch {
         // ignore parse error context
       }
       // Remove the control line from the message presented to user
@@ -177,7 +237,11 @@ export class AiService {
       case 'ADD_TO_CART': {
         const quantity = dto.quantity ?? action.payload.quantity ?? 1;
         const productId = dto.productId ?? action.payload.productId;
-        const cart = await this.cartsService.addItemForUser(user, productId, quantity);
+        const cart = await this.cartsService.addItemForUser(
+          user,
+          productId,
+          quantity,
+        );
         return {
           message: 'Đã thêm sản phẩm vào giỏ hàng',
           cart,
@@ -188,9 +252,14 @@ export class AiService {
     }
   }
 
-  private buildActions(message: string, productCards: AiProductCard[], userId: string): AiAction[] {
+  private buildActions(
+    message: string,
+    productCards: AiProductCard[],
+    userId: string,
+  ): AiAction[] {
     const actions: AiAction[] = [];
-    const wantsAddToCart = /(thêm|bỏ|cho)\s+(vào\s+)?(giỏ|gio\s*hang|cart)/i.test(message);
+    const wantsAddToCart =
+      /(thêm|bỏ|cho)\s+(vào\s+)?(giỏ|gio\s*hang|cart)/i.test(message);
     const quantity = this.extractQuantity(message) || 1;
 
     if (wantsAddToCart && productCards.length) {
@@ -226,12 +295,16 @@ export class AiService {
     ].join('\n');
   }
 
-  private buildContents(dto: AiChatDto): GeminiGenerateContentRequest['contents'] {
+  private buildContents(
+    dto: AiChatDto,
+  ): GeminiGenerateContentRequest['contents'] {
     const history = (dto.history || []).slice(-20);
-    const contents: GeminiGenerateContentRequest['contents'] = history.map((h) => ({
-      role: h.role === 'ai' ? 'model' : 'user',
-      parts: [{ text: h.content }],
-    }));
+    const contents: GeminiGenerateContentRequest['contents'] = history.map(
+      (h) => ({
+        role: h.role === 'ai' ? 'model' : 'user',
+        parts: [{ text: h.content }],
+      }),
+    );
 
     const userParts = [{ text: dto.message }];
     contents.push({ role: 'user', parts: userParts });
@@ -252,20 +325,27 @@ export class AiService {
       );
     if (wantsOrders) {
       const orders = await this.ordersService.findAll(user);
-      const latest = [...orders]
-        .sort((a: any, b: any) => {
-          const atA = new Date(a?.createdAt || a?.status?.ordered || 0).getTime();
-          const atB = new Date(b?.createdAt || b?.status?.ordered || 0).getTime();
+      const latest = [...(orders as OrderContext[])]
+        .sort((a, b) => {
+          const atA = new Date(
+            a?.createdAt || a?.status?.ordered || 0,
+          ).getTime();
+          const atB = new Date(
+            b?.createdAt || b?.status?.ordered || 0,
+          ).getTime();
           return atB - atA;
         })
         .slice(0, 5);
-      const orderLines = latest.map((o: any) => {
-        const code = o?.code || o?._id;
+      const orderLines = latest.map((o) => {
+        const code = o?.code || String(o?._id || '');
         const cancelled = o?.isCancelled ? ' (ĐÃ HỦY)' : '';
-        const total = typeof o?.totalPrice === 'number' ? `${o.totalPrice} VND` : 'N/A';
+        const total =
+          typeof o?.totalPrice === 'number' ? `${o.totalPrice} VND` : 'N/A';
         const shipped = o?.status?.shipped ? 'đã shipped' : 'chưa shipped';
         const payment = o?.payment ? `payment=${o.payment}` : 'payment=N/A';
-        const paymentStatus = o?.paymentStatus ? `paymentStatus=${o.paymentStatus}` : 'paymentStatus=N/A';
+        const paymentStatus = o?.paymentStatus
+          ? `paymentStatus=${o.paymentStatus}`
+          : 'paymentStatus=N/A';
         return `- ${code}${cancelled} | ${shipped} | ${payment} | ${paymentStatus} | total=${total}`;
       });
 
@@ -283,15 +363,24 @@ export class AiService {
       );
     if (wantsAddresses) {
       const addresses = await this.usersService.getUserAddresses(user.sub);
-      const sorted = [...addresses].sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
+      const sorted = [...(addresses as AddressContext[])].sort(
+        (a, b) => Number(b.isDefault) - Number(a.isDefault),
+      );
       parts.push(
         sorted.length
           ? [
               'ĐỊA CHỈ ĐÃ LƯU (ưu tiên địa chỉ mặc định):',
-              ...sorted.map((addr: any) => {
+              ...sorted.map((addr) => {
                 const receiver = addr?.name || 'Người nhận';
                 const phone = addr?.phone || 'N/A';
-                const line1 = [addr?.street, addr?.ward, addr?.district, addr?.city].filter(Boolean).join(', ');
+                const line1 = [
+                  addr?.street,
+                  addr?.ward,
+                  addr?.district,
+                  addr?.city,
+                ]
+                  .filter(Boolean)
+                  .join(', ');
                 const type = addr?.type ? ` | ${addr.type}` : '';
                 const isDefault = addr?.isDefault ? ' (mặc định)' : '';
                 return `- ${receiver} | ${phone} | ${line1 || 'Địa chỉ trống'}${type}${isDefault}`;
@@ -305,38 +394,57 @@ export class AiService {
     if (productHints.length) {
       const orClauses = productHints.map((token) => {
         const rx = this.buildAccentRegex(token);
-        return [{ name: rx }, { code: rx }, { category: rx }, { description: rx }];
+        return [
+          { name: rx },
+          { code: rx },
+          { category: rx },
+          { description: rx },
+        ];
       });
 
       // Try fuzzy AND search first: products that match ALL keywords (in name, code, category or description)
       // This helps when user searches specific items like "Điện trở 10k" -> must have "Điện trở" AND "10k"
-      let products: any[] = [];
+      let products: ProductContext[] = [];
       if (productHints.length > 1) {
         const andClauses = orClauses.map((group) => ({ $or: group }));
-        products = await this.productModel
+        products = (await this.productModel
           .find({ $and: andClauses })
-          .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
+          .select({
+            name: 1,
+            category: 1,
+            code: 1,
+            price: 1,
+            stock: 1,
+            images: 1,
+          })
           .limit(40)
           .lean()
-          .exec();
+          .exec()) as ProductContext[];
       }
 
       // Fallback to broad OR search if no precise match
       if (!products.length) {
         const flatOr = orClauses.flat();
-        products = await this.productModel
+        products = (await this.productModel
           .find(flatOr.length ? { $or: flatOr } : {})
-          .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1 })
+          .select({
+            name: 1,
+            category: 1,
+            code: 1,
+            price: 1,
+            stock: 1,
+            images: 1,
+          })
           .limit(40)
           .lean()
-          .exec();
+          .exec()) as ProductContext[];
       }
 
       if (products.length) {
         productCards.push(
           ...products.map((p) => ({
-            productId: p._id.toString(),
-            name: p.name,
+            productId: String(p._id),
+            name: p.name || '',
             price: p.price?.salePrice ?? p.price?.originalPrice ?? 0,
             stock: typeof p.stock === 'number' ? p.stock : 0,
             category: p.category,
@@ -348,12 +456,14 @@ export class AiService {
         parts.push(
           [
             'SẢN PHẨM LIÊN QUAN (tối đa 40):',
-            ...products.map((p: any) => {
+            ...products.map((p) => {
               const code = p?.code ? `code=${p.code}` : 'code=N/A';
               const cat = p?.category ? `cat=${p.category}` : 'cat=N/A';
               const price = p?.price?.salePrice ?? p?.price?.originalPrice;
-              const priceText = typeof price === 'number' ? `${price} VND` : 'N/A';
-              const stockText = typeof p?.stock === 'number' ? `stock=${p.stock}` : 'stock=N/A';
+              const priceText =
+                typeof price === 'number' ? `${price} VND` : 'N/A';
+              const stockText =
+                typeof p?.stock === 'number' ? `stock=${p.stock}` : 'stock=N/A';
               return `- ${p?.name || 'N/A'} | ${code} | ${cat} | price=${priceText} | ${stockText}`;
             }),
           ].join('\n'),
@@ -420,7 +530,9 @@ export class AiService {
       'đang',
       'het',
     ]);
-    const keywords = tokens.filter((t) => t.length >= 2 && !stop.has(t)).slice(0, 8);
+    const keywords = tokens
+      .filter((t) => t.length >= 2 && !stop.has(t))
+      .slice(0, 8);
     return Array.from(new Set(keywords));
   }
 
@@ -452,7 +564,12 @@ export class AiService {
     return new RegExp(pattern, 'i');
   }
 
-  private async rerankProducts(message: string, products: AiProductCard[], model: string, apiKey: string) {
+  private async rerankProducts(
+    message: string,
+    products: AiProductCard[],
+    model: string,
+    apiKey: string,
+  ) {
     if (!products?.length) return products;
 
     const rows = products.map((p) => {
@@ -498,7 +615,10 @@ export class AiService {
     byCode.sort((a, b) => {
       const ca = (a.code || a.productId || '').toLowerCase();
       const cb = (b.code || b.productId || '').toLowerCase();
-      return (orderMap.get(ca) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(cb) ?? Number.MAX_SAFE_INTEGER);
+      return (
+        (orderMap.get(ca) ?? Number.MAX_SAFE_INTEGER) -
+        (orderMap.get(cb) ?? Number.MAX_SAFE_INTEGER)
+      );
     });
 
     // Only show the reranked items. If rerank returns empty, fallback was handled above.
@@ -507,7 +627,10 @@ export class AiService {
 
   private parseCodesFromRerank(raw: string): string[] {
     if (!raw) return [];
-    let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+    let cleaned = raw
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
 
     const start = cleaned.indexOf('[');
     const end = cleaned.lastIndexOf(']');
@@ -537,10 +660,18 @@ export class AiService {
     }
     const contentType = response.headers.get('content-type') || 'image/jpeg';
     const buffer = Buffer.from(await response.arrayBuffer());
-    return { base64: buffer.toString('base64'), mimeType: contentType.split(';')[0] || 'image/jpeg' };
+    return {
+      base64: buffer.toString('base64'),
+      mimeType: contentType.split(';')[0] || 'image/jpeg',
+    };
   }
 
-  private async extractPartsFromImage(message: string, imageUrl: string, apiKey: string, model: string) {
+  private async extractPartsFromImage(
+    message: string,
+    imageUrl: string,
+    apiKey: string,
+    model: string,
+  ) {
     const image = await this.downloadImageAsBase64(imageUrl);
     const prompt = [
       'Bạn là chuyên gia về mạch điện tử. Hãy phân tích ảnh (schematic hoặc linh kiện thực tế) và trích xuất danh sách linh kiện.',
@@ -581,7 +712,10 @@ export class AiService {
 
   private parsePartsFromResponse(raw: string) {
     // Remove markdown code blocks and whitespace
-    let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+    let cleaned = raw
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
 
     const firstBracket = cleaned.indexOf('[');
     const lastBracket = cleaned.lastIndexOf(']');
@@ -610,7 +744,8 @@ export class AiService {
         return parsed
           .map((p) => ({
             name: typeof p?.name === 'string' ? p.name : null,
-            vietnameseName: typeof p?.vietnameseName === 'string' ? p.vietnameseName : null,
+            vietnameseName:
+              typeof p?.vietnameseName === 'string' ? p.vietnameseName : null,
             value: typeof p?.value === 'string' ? p.value : null,
             package: typeof p?.package === 'string' ? p.package : null,
             notes:
@@ -644,12 +779,25 @@ export class AiService {
 
     const ors = tokens.map((token) => {
       const rx = this.buildAccentRegex(token);
-      return [{ name: rx }, { code: rx }, { category: rx }, { description: rx }];
+      return [
+        { name: rx },
+        { code: rx },
+        { category: rx },
+        { description: rx },
+      ];
     });
     const flatOr = ors.flat();
     const products = await this.productModel
       .find(flatOr.length ? { $or: flatOr } : {})
-      .select({ name: 1, category: 1, code: 1, price: 1, stock: 1, images: 1, description: 1 })
+      .select({
+        name: 1,
+        category: 1,
+        code: 1,
+        price: 1,
+        stock: 1,
+        images: 1,
+        description: 1,
+      })
       .limit(60)
       .lean()
       .exec();
@@ -659,7 +807,12 @@ export class AiService {
     // **Bước 3: Lọc qua AI để đảm bảo chỉ lấy linh kiện đúng/tương tự (không fallback bằng text)**
     if (apiKey && model) {
       try {
-        const filteredProducts = await this.filterProductsByAI(parts, products, apiKey, model);
+        const filteredProducts = await this.filterProductsByAI(
+          parts,
+          products,
+          apiKey,
+          model,
+        );
         // Trả về đúng kết quả AI quyết định (kể cả rỗng)
         return Array.isArray(filteredProducts) ? filteredProducts : [];
       } catch (err) {
@@ -687,7 +840,13 @@ export class AiService {
     apiKey: string,
     model: string,
   ) {
-    const partsJson = JSON.stringify(parts.map((p) => ({ name: p.name, value: p.value, vietnameseName: p.vietnameseName })));
+    const partsJson = JSON.stringify(
+      parts.map((p) => ({
+        name: p.name,
+        value: p.value,
+        vietnameseName: p.vietnameseName,
+      })),
+    );
     const productsJson = JSON.stringify(
       products.map((p) => ({
         id: p._id.toString(),
@@ -742,11 +901,18 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
 
   private parseFilteredProductsResponse(raw: string, allProducts: any[]) {
     try {
-      let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+      let cleaned = raw
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
       const firstBracket = cleaned.indexOf('[');
       const lastBracket = cleaned.lastIndexOf(']');
 
-      if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      if (
+        firstBracket !== -1 &&
+        lastBracket !== -1 &&
+        lastBracket > firstBracket
+      ) {
         cleaned = cleaned.substring(firstBracket, lastBracket + 1);
       } else {
         return [];
@@ -788,7 +954,7 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
     raw?: string,
   ) {
     const lines: string[] = [];
-    
+
     // **Bước 1: Báo linh kiện tìm thấy từ ảnh**
     if (parts.length > 0) {
       lines.push(`📸 Phân tích ảnh: Tìm thấy ${parts.length} linh kiện`);
@@ -801,7 +967,9 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
       lines.push('');
     } else {
       if (raw && raw.length > 10) {
-        lines.push('❌ Không thể phân tích JSON từ ảnh. Dữ liệu không rõ ràng:');
+        lines.push(
+          '❌ Không thể phân tích JSON từ ảnh. Dữ liệu không rõ ràng:',
+        );
         lines.push(raw);
       } else {
         lines.push('❌ Không phát hiện linh kiện nào trong ảnh. Vui lòng:');
@@ -818,7 +986,9 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
       lines.push('');
       products.forEach((p) => {
         const stock = p.stock > 0 ? `✓ Còn ${p.stock}` : '❌ Hết hàng';
-        lines.push(`• ${p.name} (${p.code || 'N/A'}) - ${p.price} VND - ${stock}`);
+        lines.push(
+          `• ${p.name} (${p.code || 'N/A'}) - ${p.price} VND - ${stock}`,
+        );
       });
     } else {
       // **Bước 3: Báo thiếu linh kiện**
@@ -850,7 +1020,12 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
   private createPendingAction(userId: string, action: AiAction): AiAction {
     const id = randomUUID();
     const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-    const wrapped: PendingAction = { id, userId, action: { ...action, confirmationId: id }, expiresAt };
+    const wrapped: PendingAction = {
+      id,
+      userId,
+      action: { ...action, confirmationId: id },
+      expiresAt,
+    };
     this.pendingActions.set(id, wrapped);
     return { ...action, confirmationId: id };
   }
@@ -872,7 +1047,11 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
       .toLowerCase();
   }
 
-  private async callGemini(model: string, apiKey: string, body: GeminiGenerateContentRequest) {
+  private async callGemini(
+    model: string,
+    apiKey: string,
+    body: GeminiGenerateContentRequest,
+  ) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const response = await fetch(url, {
       method: 'POST',
@@ -880,17 +1059,23 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
       body: JSON.stringify(body),
     });
 
-    const data = (await response.json().catch(() => ({}))) as GeminiGenerateContentResponse & {
+    const data = (await response
+      .json()
+      .catch(() => ({}))) as GeminiGenerateContentResponse & {
       error?: { message?: string };
     };
 
     if (!response.ok) {
-      const message = data?.error?.message || 'Không thể gọi Gemini. Vui lòng thử lại.';
+      const message =
+        data?.error?.message || 'Không thể gọi Gemini. Vui lòng thử lại.';
       throw new ServiceUnavailableException(message);
     }
 
     return (
-      data?.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join('') ||
+      data?.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text)
+        .filter(Boolean)
+        .join('') ||
       'Mình chưa nhận được phản hồi hợp lệ từ AI. Bạn thử hỏi lại giúp mình nhé.'
     );
   }

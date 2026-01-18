@@ -1,9 +1,22 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { UserNotificationStatus, UserNotificationStatusDocument } from './schemas/user-notification-status.schema';
-import { Notification, NotificationDocument } from './schemas/notification.schema';
-import { NotificationTarget, NotificationTargetDocument } from './schemas/notification-target.schema';
+import {
+  UserNotificationStatus,
+  UserNotificationStatusDocument,
+} from './schemas/user-notification-status.schema';
+import {
+  Notification,
+  NotificationDocument,
+} from './schemas/notification.schema';
+import {
+  NotificationTarget,
+  NotificationTargetDocument,
+} from './schemas/notification-target.schema';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -39,8 +52,7 @@ export class NotificationsService {
     private readonly userModel: Model<UserDocument>,
     private readonly firebaseService: FirebaseService,
   ) {}
-// ... (rest of the file until applyTargetsAndStatuses)
-
+  // ... (rest of the file until applyTargetsAndStatuses)
 
   async findForUser(userId: string): Promise<NotificationView[]> {
     const userObjectId = new Types.ObjectId(userId);
@@ -67,7 +79,9 @@ export class NotificationsService {
         },
         {
           $addFields: {
-            effectiveSendAt: { $ifNull: ['$notification.send_at', '$notification.createdAt'] },
+            effectiveSendAt: {
+              $ifNull: ['$notification.send_at', '$notification.createdAt'],
+            },
           },
         },
         {
@@ -203,8 +217,12 @@ export class NotificationsService {
     const notification = await this.notificationModel.findById(id).lean();
     if (!notification) throw new NotFoundException('Notification not found');
 
-    const targets = await this.notificationTargetModel.find({ notification_id: notification._id }).lean();
-    const statuses = await this.userNotificationStatusModel.find({ notification_id: notification._id }).lean();
+    const targets = await this.notificationTargetModel
+      .find({ notification_id: notification._id })
+      .lean();
+    const statuses = await this.userNotificationStatusModel
+      .find({ notification_id: notification._id })
+      .lean();
     const readCount = statuses.filter((s) => s.is_read).length;
 
     return {
@@ -224,17 +242,32 @@ export class NotificationsService {
     if (dto.type !== undefined) notification.type = dto.type;
     if (dto.priority !== undefined) notification.priority = dto.priority;
     if (dto.metadata !== undefined) notification.metadata = dto.metadata;
-    if (dto.sendAt !== undefined) notification.send_at = dto.sendAt ? new Date(dto.sendAt) : undefined;
-    if (dto.expiresAt !== undefined) notification.expires_at = dto.expiresAt ? new Date(dto.expiresAt) : undefined;
+    if (dto.sendAt !== undefined)
+      notification.send_at = dto.sendAt ? new Date(dto.sendAt) : undefined;
+    if (dto.expiresAt !== undefined)
+      notification.expires_at = dto.expiresAt
+        ? new Date(dto.expiresAt)
+        : undefined;
 
     await notification.save();
 
     if (dto.target) {
-      await this.notificationTargetModel.deleteMany({ notification_id: notification._id });
-      await this.userNotificationStatusModel.deleteMany({ notification_id: notification._id });
+      await this.notificationTargetModel.deleteMany({
+        notification_id: notification._id,
+      });
+      await this.userNotificationStatusModel.deleteMany({
+        notification_id: notification._id,
+      });
       const sendAt = dto.sendAt ? new Date(dto.sendAt) : notification.send_at;
-      const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : notification.expires_at;
-      await this.applyTargetsAndStatuses(notification._id, dto.target, sendAt, expiresAt);
+      const expiresAt = dto.expiresAt
+        ? new Date(dto.expiresAt)
+        : notification.expires_at;
+      await this.applyTargetsAndStatuses(
+        notification._id,
+        dto.target,
+        sendAt,
+        expiresAt,
+      );
     }
 
     return this.adminFindOne(id);
@@ -242,20 +275,33 @@ export class NotificationsService {
 
   async adminDelete(id: string) {
     const notificationId = new Types.ObjectId(id);
-    await this.notificationTargetModel.deleteMany({ notification_id: notificationId });
-    await this.userNotificationStatusModel.deleteMany({ notification_id: notificationId });
-    const result = await this.notificationModel.deleteOne({ _id: notificationId });
-    if (!result.deletedCount) throw new NotFoundException('Notification not found');
+    await this.notificationTargetModel.deleteMany({
+      notification_id: notificationId,
+    });
+    await this.userNotificationStatusModel.deleteMany({
+      notification_id: notificationId,
+    });
+    const result = await this.notificationModel.deleteOne({
+      _id: notificationId,
+    });
+    if (!result.deletedCount)
+      throw new NotFoundException('Notification not found');
     return { message: 'Deleted' };
   }
 
   private async applyTargetsAndStatuses(
     notificationId: Types.ObjectId,
-    target: { scope: 'all_users' | 'user'; emails?: string[]; userIds?: string[] },
+    target: {
+      scope: 'all_users' | 'user';
+      emails?: string[];
+      userIds?: string[];
+    },
     sendAt?: Date,
     expiresAt?: Date,
   ) {
-    const notification = await this.notificationModel.findById(notificationId).lean();
+    const notification = await this.notificationModel
+      .findById(notificationId)
+      .lean();
     if (!notification) return;
 
     if (target.scope === 'all_users') {
@@ -264,7 +310,9 @@ export class NotificationsService {
         scope: 'all_users',
       });
 
-      const users = await this.userModel.find({}, { _id: 1, fcmTokens: 1 }).lean();
+      const users = await this.userModel
+        .find({}, { _id: 1, fcmTokens: 1 })
+        .lean();
       if (users.length) {
         const statuses = users.map((u) => ({
           notification_id: notificationId,
@@ -276,9 +324,14 @@ export class NotificationsService {
         await this.userNotificationStatusModel.insertMany(statuses);
 
         // Send Push Notifications
-        const tokens = users.flatMap(u => u.fcmTokens || []).filter(Boolean);
+        const tokens = users.flatMap((u) => u.fcmTokens || []).filter(Boolean);
         if (tokens.length) {
-           await this.firebaseService.sendToDevice(tokens, notification.title, notification.body, notification.metadata as any);
+          await this.firebaseService.sendToDevice(
+            tokens,
+            notification.title,
+            notification.body,
+            notification.metadata as any,
+          );
         }
       }
       return;
@@ -291,7 +344,9 @@ export class NotificationsService {
       });
     }
     if (target.emails?.length) {
-      const normalized = target.emails.map((e) => (e || '').toLowerCase().trim()).filter(Boolean);
+      const normalized = target.emails
+        .map((e) => (e || '').toLowerCase().trim())
+        .filter(Boolean);
       if (normalized.length) {
         const users = await this.userModel
           .find({ email: { $in: normalized } }, { _id: 1 })
@@ -300,9 +355,13 @@ export class NotificationsService {
       }
     }
 
-    const uniqueIds = [...new Set(ids.map((x) => x.toString()))].map((id) => new Types.ObjectId(id));
+    const uniqueIds = [...new Set(ids.map((x) => x.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    );
     if (!uniqueIds.length) {
-      throw new ForbiddenException('No target users found for this notification');
+      throw new ForbiddenException(
+        'No target users found for this notification',
+      );
     }
 
     await this.notificationTargetModel.insertMany(
@@ -324,10 +383,19 @@ export class NotificationsService {
     );
 
     // Send Push Notifications to specific users
-    const targetUsers = await this.userModel.find({ _id: { $in: uniqueIds } }, { fcmTokens: 1 }).lean();
-    const tokens = targetUsers.flatMap(u => u.fcmTokens || []).filter(Boolean);
+    const targetUsers = await this.userModel
+      .find({ _id: { $in: uniqueIds } }, { fcmTokens: 1 })
+      .lean();
+    const tokens = targetUsers
+      .flatMap((u) => u.fcmTokens || [])
+      .filter(Boolean);
     if (tokens.length) {
-       await this.firebaseService.sendToDevice(tokens, notification.title, notification.body, notification.metadata as any);
+      await this.firebaseService.sendToDevice(
+        tokens,
+        notification.title,
+        notification.body,
+        notification.metadata as any,
+      );
     }
   }
 }

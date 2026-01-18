@@ -12,9 +12,8 @@ export class FirebaseService implements OnModuleInit {
     try {
       // Look for serviceAccountKey.json in root or config folder
       const keyPath = path.resolve(process.cwd(), 'serviceAccountKey.json');
-      
+
       if (fs.existsSync(keyPath)) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
         const serviceAccount = require(keyPath);
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccount),
@@ -22,14 +21,21 @@ export class FirebaseService implements OnModuleInit {
         this.initialized = true;
         this.logger.log('Firebase Admin SDK initialized successfully');
       } else {
-        this.logger.warn('serviceAccountKey.json not found. Push notifications will be disabled.');
+        this.logger.warn(
+          'serviceAccountKey.json not found. Push notifications will be disabled.',
+        );
       }
     } catch (error) {
       this.logger.error('Failed to initialize Firebase Admin SDK', error);
     }
   }
 
-  async sendToDevice(tokens: string[], title: string, body: string, data?: Record<string, string>) {
+  async sendToDevice(
+    tokens: string[],
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ) {
     if (!this.initialized || !tokens.length) return;
 
     try {

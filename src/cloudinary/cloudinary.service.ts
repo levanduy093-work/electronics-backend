@@ -1,5 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { UploadApiErrorResponse, UploadApiResponse, v2 as cloudinary } from 'cloudinary';
+import {
+  UploadApiErrorResponse,
+  UploadApiResponse,
+  v2 as cloudinary,
+} from 'cloudinary';
 import * as streamifier from 'streamifier';
 
 @Injectable()
@@ -14,7 +18,10 @@ export class CloudinaryService {
   private sanitizeFolder(folder?: string) {
     const fallbackFolder = this.buildFallbackFolder();
     if (!folder) return fallbackFolder;
-    const cleaned = folder.replace(/[^a-zA-Z0-9/_-]/g, '').replace(/\/+/g, '/').trim();
+    const cleaned = folder
+      .replace(/[^a-zA-Z0-9/_-]/g, '')
+      .replace(/\/+/g, '/')
+      .trim();
     return cleaned || fallbackFolder;
   }
 
@@ -32,7 +39,10 @@ export class CloudinaryService {
         },
         (error, result) => {
           if (error) return reject(error);
-          if (!result) return reject(new Error('Upload to Cloudinary failed - No result returned'));
+          if (!result)
+            return reject(
+              new Error('Upload to Cloudinary failed - No result returned'),
+            );
           resolve(result);
         },
       );
@@ -41,7 +51,10 @@ export class CloudinaryService {
   }
 
   private detectTargetFormat(contentType: string, url: string): 'jpg' | 'png' {
-    const normalizedContentType = contentType.split(';')[0].trim().toLowerCase();
+    const normalizedContentType = contentType
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
     const map: Record<string, 'jpg' | 'png'> = {
       'image/jpeg': 'jpg',
       'image/jpg': 'jpg',

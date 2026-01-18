@@ -11,7 +11,10 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderDto } from './dto/update-order.dto';
 import { Order, OrderDocument } from './schemas/order.schema';
 import { TransactionsService } from '../transactions/transactions.service';
-import { Transaction, TransactionDocument } from '../transactions/schemas/transaction.schema';
+import {
+  Transaction,
+  TransactionDocument,
+} from '../transactions/schemas/transaction.schema';
 import { ShipmentsService } from '../shipments/shipments.service';
 import { ProductsService } from '../products/products.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
@@ -31,25 +34,35 @@ export class OrdersService {
   ) {}
 
   async create(data: CreateOrderDto, user: JwtPayload) {
-    console.log('[OrdersService.create] Starting order creation', { userId: user.sub, itemsCount: data.items?.length });
+    console.log('[OrdersService.create] Starting order creation', {
+      userId: user.sub,
+      itemsCount: data.items?.length,
+    });
     const payload = this.mapDto(data, user.sub);
-    
+
     // Deduct stock and create order atomically to avoid overselling
     const session = await this.orderModel.db.startSession();
     let createdObj: Partial<Order> | null = null;
 
     try {
       await session.withTransaction(async () => {
-        console.log('[OrdersService.create] Starting transaction - deducting stock');
+        console.log(
+          '[OrdersService.create] Starting transaction - deducting stock',
+        );
         await this.deductProductStock(payload.items, session);
-        console.log('[OrdersService.create] Stock deducted successfully, creating order');
+        console.log(
+          '[OrdersService.create] Stock deducted successfully, creating order',
+        );
 
         const [created] = await this.orderModel.create([payload], { session });
         createdObj = this.strip(created.toObject());
         console.log('[OrdersService.create] Order created:', createdObj?.code);
       });
     } catch (error: any) {
-      console.error('[OrdersService.create] Transaction error:', error?.message);
+      console.error(
+        '[OrdersService.create] Transaction error:',
+        error?.message,
+      );
       // Fallback for environments without replica set transactions
       const isTxnUnavailable =
         error?.code === 20 ||
@@ -57,11 +70,16 @@ export class OrdersService {
         `${error?.message || ''}`.toLowerCase().includes('transaction');
 
       if (!isTxnUnavailable) {
-        console.error('[OrdersService.create] Not a transaction error, throwing', error?.message);
+        console.error(
+          '[OrdersService.create] Not a transaction error, throwing',
+          error?.message,
+        );
         throw error;
       }
 
-      console.log('[OrdersService.create] Falling back to non-transaction mode');
+      console.log(
+        '[OrdersService.create] Falling back to non-transaction mode',
+      );
       await this.deductProductStock(payload.items);
       const created = await this.orderModel.create(payload);
       createdObj = this.strip(created.toObject());
@@ -81,7 +99,8 @@ export class OrdersService {
   }
 
   async findAll(user: JwtPayload) {
-    const filter = user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    const filter =
+      user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
     const docs = await this.orderModel.find(filter).lean();
     // Đồng bộ giao dịch COD nếu bị thiếu (tránh mất transaction do client gửi chuỗi payment khác chuẩn)
     const codOrders = docs.filter((o) => this.isCodPayment(o.payment));
@@ -158,12 +177,12 @@ export class OrdersService {
     // Get order details before cancelling to restore stock
     const order = await this.orderModel.findById(id).lean();
     if (!order) throw new NotFoundException('Order not found');
-    
+
     // Only restore stock if order is not already cancelled
     if (!order.isCancelled) {
       await this.restoreProductStock(order.items);
     }
-    
+
     return this.update(
       id,
       {
@@ -192,16 +211,26 @@ export class OrdersService {
     if (data.items) {
       mapped.items = data.items.map((item) => ({
         ...item,
-        productId: item.productId ? new Types.ObjectId(item.productId) : undefined,
+        productId: item.productId
+          ? new Types.ObjectId(item.productId)
+          : undefined,
       }));
     }
     if (data.status) {
       mapped.status = {
         ...data.status,
-        ordered: data.status.ordered ? new Date(data.status.ordered) : data.status.ordered,
-        confirmed: data.status.confirmed ? new Date(data.status.confirmed) : data.status.confirmed,
-        packaged: data.status.packaged ? new Date(data.status.packaged) : data.status.packaged,
-        shipped: data.status.shipped ? new Date(data.status.shipped) : data.status.shipped,
+        ordered: data.status.ordered
+          ? new Date(data.status.ordered)
+          : data.status.ordered,
+        confirmed: data.status.confirmed
+          ? new Date(data.status.confirmed)
+          : data.status.confirmed,
+        packaged: data.status.packaged
+          ? new Date(data.status.packaged)
+          : data.status.packaged,
+        shipped: data.status.shipped
+          ? new Date(data.status.shipped)
+          : data.status.shipped,
       };
     }
     return mapped;
@@ -209,10 +238,18 @@ export class OrdersService {
 
   private isStatusReset(status?: UpdateOrderDto['status']) {
     if (!status) return false;
-    return !status.ordered && !status.confirmed && !status.packaged && !status.shipped;
+    return (
+      !status.ordered &&
+      !status.confirmed &&
+      !status.packaged &&
+      !status.shipped
+    );
   }
 
-  private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {
+  private ensureOwnerOrAdmin(
+    ownerId: Types.ObjectId | undefined,
+    user: JwtPayload,
+  ) {
     if (user.role === 'admin') return;
     if (!ownerId || ownerId.toString() !== user.sub) {
       throw new ForbiddenException('Access denied');
@@ -250,11 +287,16 @@ export class OrdersService {
       .findOne({ orderId: new Types.ObjectId(orderId), provider: 'cod' })
       .lean();
 
-    const paidAtUpdate = status === 'paid' ? { paidAt: new Date().toISOString() } : {};
+    const paidAtUpdate =
+      status === 'paid' ? { paidAt: new Date().toISOString() } : {};
 
     if (existing?._id) {
       await this.transactionModel
-        .findByIdAndUpdate(existing._id, { status, ...paidAtUpdate }, { lean: true })
+        .findByIdAndUpdate(
+          existing._id,
+          { status, ...paidAtUpdate },
+          { lean: true },
+        )
         .exec();
     } else {
       await this.transactionsService.create({
@@ -269,7 +311,10 @@ export class OrdersService {
     }
   }
 
-  private async ensureShipmentExists(order: Partial<Order>, wasShipped: boolean) {
+  private async ensureShipmentExists(
+    order: Partial<Order>,
+    wasShipped: boolean,
+  ) {
     const orderId = (order as any)._id?.toString?.();
     if (!orderId) return;
     const existingShipment = await this.shipmentsService.findByOrderId(orderId);
@@ -295,7 +340,11 @@ export class OrdersService {
       return;
     }
 
-    console.log('[deductProductStock] Starting stock deduction for', items.length, 'items');
+    console.log(
+      '[deductProductStock] Starting stock deduction for',
+      items.length,
+      'items',
+    );
     // Ensure we handle session correctly (pass undefined if null/undefined)
     const options = session ? { session } : {};
     const updatedItems: { productId: Types.ObjectId; quantity: number }[] = [];
@@ -321,11 +370,16 @@ export class OrdersService {
 
         // If modifiedCount is 0, it means either product not found OR condition (stock >= quantity) failed
         if (result.modifiedCount !== 1) {
-          console.error('[deductProductStock] Update failed, checking reason for:', productId.toString());
-          
+          console.error(
+            '[deductProductStock] Update failed, checking reason for:',
+            productId.toString(),
+          );
+
           // Find product to give specific error message
-          const product = await this.productModel.findById(productId, null, options).lean();
-          
+          const product = await this.productModel
+            .findById(productId, null, options)
+            .lean();
+
           if (!product) {
             throw new NotFoundException('Sản phẩm không tồn tại');
           }
@@ -337,54 +391,85 @@ export class OrdersService {
             available: availableStock,
             requested: item.quantity,
           });
-          
+
           throw new BadRequestException(
-            `Sản phẩm ${product.name} không đủ số lượng (Còn: ${availableStock}, Đặt: ${item.quantity})`
+            `Sản phẩm ${product.name} không đủ số lượng (Còn: ${availableStock}, Đặt: ${item.quantity})`,
           );
         }
-        
+
         updatedItems.push({ productId, quantity: item.quantity });
-        console.log('[deductProductStock] Stock updated successfully for:', productId.toString());
+        console.log(
+          '[deductProductStock] Stock updated successfully for:',
+          productId.toString(),
+        );
       }
     } catch (error) {
-      console.error('[deductProductStock] Error during stock deduction:', error?.message);
+      console.error(
+        '[deductProductStock] Error during stock deduction:',
+        error?.message,
+      );
       // Manual rollback if needed (critical for non-transaction mode)
       if (updatedItems.length > 0) {
-        console.log('[deductProductStock] Restoring stock for', updatedItems.length, 'items due to error');
+        console.log(
+          '[deductProductStock] Restoring stock for',
+          updatedItems.length,
+          'items due to error',
+        );
         try {
-           await this.restoreProductStock(updatedItems, true, session);
+          await this.restoreProductStock(updatedItems, true, session);
         } catch (restoreError) {
-           console.error('[deductProductStock] Critical: Failed to restore stock', restoreError);
+          console.error(
+            '[deductProductStock] Critical: Failed to restore stock',
+            restoreError,
+          );
         }
       }
       throw error;
     }
   }
 
-  private async restoreProductStock(items: any[], silent = false, session?: ClientSession) {
+  private async restoreProductStock(
+    items: any[],
+    silent = false,
+    session?: ClientSession,
+  ) {
     if (!items || items.length === 0) {
       console.log('[restoreProductStock] No items to restore');
       return;
     }
 
-    console.log('[restoreProductStock] Restoring stock for', items.length, 'items');
+    console.log(
+      '[restoreProductStock] Restoring stock for',
+      items.length,
+      'items',
+    );
     for (const item of items) {
       if (!item.productId || !item.quantity) continue;
-      
+
       try {
-        const productId = item.productId instanceof Types.ObjectId 
-          ? item.productId
-          : new Types.ObjectId(item.productId);
-        
-        console.log('[restoreProductStock] Restoring:', { productId: productId.toString(), quantity: item.quantity });
+        const productId =
+          item.productId instanceof Types.ObjectId
+            ? item.productId
+            : new Types.ObjectId(item.productId);
+
+        console.log('[restoreProductStock] Restoring:', {
+          productId: productId.toString(),
+          quantity: item.quantity,
+        });
         const restored = await this.productModel.findByIdAndUpdate(
           productId,
           { $inc: { stock: item.quantity, saleCount: -item.quantity } },
-          { new: true, session }
+          { new: true, session },
         );
-        console.log('[restoreProductStock] Restored successfully:', { productId: productId.toString(), newStock: restored?.stock });
+        console.log('[restoreProductStock] Restored successfully:', {
+          productId: productId.toString(),
+          newStock: restored?.stock,
+        });
       } catch (error) {
-        console.error(`[restoreProductStock] Failed to restore stock for product ${item.productId}:`, error);
+        console.error(
+          `[restoreProductStock] Failed to restore stock for product ${item.productId}:`,
+          error,
+        );
         // Nếu đang rollback sau khi trừ kho thất bại, tránh chặn lỗi gốc
         if (!silent) {
           throw error;
@@ -392,5 +477,4 @@ export class OrdersService {
       }
     }
   }
-
 }

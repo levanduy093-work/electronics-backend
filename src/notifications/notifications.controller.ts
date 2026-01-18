@@ -44,7 +44,10 @@ export class NotificationsController {
   @Roles('admin')
   @UseGuards(RolesGuard)
   @Post('admin')
-  createAdmin(@Body() dto: CreateNotificationDto, @CurrentUser() user: JwtPayload) {
+  createAdmin(
+    @Body() dto: CreateNotificationDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
     return this.notificationsService.adminCreate(dto, user.sub);
   }
 

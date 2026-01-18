@@ -20,7 +20,10 @@ export class ShipmentsService {
     if (!mapped.expectedDelivery) {
       mapped.expectedDelivery = this.getDefaultExpectedDelivery();
     }
-    if (mapped.status && (!mapped.statusHistory || mapped.statusHistory.length === 0)) {
+    if (
+      mapped.status &&
+      (!mapped.statusHistory || mapped.statusHistory.length === 0)
+    ) {
       mapped.statusHistory = [{ status: mapped.status, at: new Date() }];
     }
     const created = await this.shipmentModel.create(mapped);
@@ -35,7 +38,9 @@ export class ShipmentsService {
   }
 
   async findByOrderId(orderId: string) {
-    const doc = await this.shipmentModel.findOne({ orderId: new Types.ObjectId(orderId) }).lean();
+    const doc = await this.shipmentModel
+      .findOne({ orderId: new Types.ObjectId(orderId) })
+      .lean();
     return doc ? this.strip(doc) : null;
   }
 
@@ -69,7 +74,10 @@ export class ShipmentsService {
       .exec();
     if (!doc) throw new NotFoundException('Shipment not found');
     const result = this.strip(doc);
-    await this.syncPaymentToOrder(result.orderId, payload.paymentStatus ?? result.paymentStatus);
+    await this.syncPaymentToOrder(
+      result.orderId,
+      payload.paymentStatus ?? result.paymentStatus,
+    );
     return result;
   }
 
@@ -82,7 +90,8 @@ export class ShipmentsService {
   private mapDto(data: Partial<CreateShipmentDto>) {
     const mapped: any = { ...data };
     if (data.orderId) mapped.orderId = new Types.ObjectId(data.orderId);
-    if (data.expectedDelivery) mapped.expectedDelivery = new Date(data.expectedDelivery);
+    if (data.expectedDelivery)
+      mapped.expectedDelivery = new Date(data.expectedDelivery);
     if (data.statusHistory) {
       mapped.statusHistory = data.statusHistory.map((entry) => ({
         ...entry,
@@ -98,17 +107,25 @@ export class ShipmentsService {
     return eta;
   }
 
-  private async syncPaymentToOrder(orderId?: Types.ObjectId | string, paymentStatus?: string) {
+  private async syncPaymentToOrder(
+    orderId?: Types.ObjectId | string,
+    paymentStatus?: string,
+  ) {
     if (!orderId || !paymentStatus) return;
-    const parsedOrderId = typeof orderId === 'string' ? new Types.ObjectId(orderId) : orderId;
-    await this.orderModel.findByIdAndUpdate(parsedOrderId, { paymentStatus }, { lean: true }).exec();
+    const parsedOrderId =
+      typeof orderId === 'string' ? new Types.ObjectId(orderId) : orderId;
+    await this.orderModel
+      .findByIdAndUpdate(parsedOrderId, { paymentStatus }, { lean: true })
+      .exec();
   }
 
   private strip = (doc: Partial<Shipment>) => {
     const { __v, ...rest } = doc as Partial<Shipment & { __v?: number }>;
     const createdAt = (rest as any)?.createdAt;
     if (!rest.expectedDelivery && createdAt) {
-      rest.expectedDelivery = this.getDefaultExpectedDelivery(new Date(createdAt));
+      rest.expectedDelivery = this.getDefaultExpectedDelivery(
+        new Date(createdAt),
+      );
     }
     return rest;
   };

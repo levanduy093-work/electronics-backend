@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
 import { Model } from 'mongoose';
@@ -16,7 +20,7 @@ export class UsersService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<Product>,
-  ) { }
+  ) {}
 
   async addVoucher(id: string, voucherData: CreateVoucherDto) {
     const user = await this.userModel.findById(id);
@@ -31,7 +35,7 @@ export class UsersService {
     };
     await this.userModel.updateOne(
       { _id: id },
-      { $push: { voucher: newVoucher } }
+      { $push: { voucher: newVoucher } },
     );
     return this.findOne(id);
   }
@@ -39,11 +43,16 @@ export class UsersService {
   async create(data: CreateUserDto) {
     const passwordHash = await this.hashPassword(data.password);
     const { password, ...rest } = data;
-    const created = await this.userModel.create({ ...rest, passwordHashed: passwordHash });
+    const created = await this.userModel.create({
+      ...rest,
+      passwordHashed: passwordHash,
+    });
     return this.toSafeUser(created.toObject());
   }
 
-  async createWithHashedPassword(data: Omit<CreateUserDto, 'password'> & { passwordHashed: string }) {
+  async createWithHashedPassword(
+    data: Omit<CreateUserDto, 'password'> & { passwordHashed: string },
+  ) {
     const created = await this.userModel.create({ ...data });
     return this.toSafeUser(created.toObject());
   }
@@ -106,7 +115,10 @@ export class UsersService {
     }
 
     if (address.isDefault) {
-      user.address = user.address.map((addr) => ({ ...addr, isDefault: false }));
+      user.address = user.address.map((addr) => ({
+        ...addr,
+        isDefault: false,
+      }));
     }
     user.address.push({
       ...address,
@@ -240,18 +252,18 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    
+
     // Giới hạn 20 queries mới nhất
     const limitedQueries = queries.slice(0, 20);
-    
+
     // Đảm bảo field searchHistory tồn tại (cho các documents cũ)
     if (!user.searchHistory) {
       user.searchHistory = [];
     }
-    
+
     user.searchHistory = limitedQueries;
     await user.save();
-    
+
     return {
       queries: user.searchHistory || [],
       updatedAt: (user as any).updatedAt,
@@ -263,7 +275,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    
+
     // Đảm bảo field searchHistory tồn tại (cho các documents cũ)
     if (!user.searchHistory) {
       user.searchHistory = [];
@@ -271,13 +283,15 @@ export class UsersService {
       user.searchHistory = [];
     }
     await user.save();
-    
+
     return { success: true };
   }
 
   private toSafeUser = (user: Partial<User>) => {
     // Hide password hash when returning to clients.
-    const { passwordHashed, __v, ...rest } = user as Partial<User & { __v?: number }>;
+    const { passwordHashed, __v, ...rest } = user as Partial<
+      User & { __v?: number }
+    >;
     return rest;
   };
 
@@ -308,7 +322,7 @@ export class UsersService {
 
   private stripProduct = (product: any) => {
     if (!product) return product;
-    const { __v, ...rest } = product as any;
+    const { __v, ...rest } = product;
     return rest;
   };
 

@@ -62,7 +62,10 @@ export class UsersController {
   }
 
   @Post('me/fcm-token')
-  updateFcmToken(@CurrentUser() user: JwtPayload, @Body() body: { token: string }) {
+  updateFcmToken(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { token: string },
+  ) {
     return this.usersService.addFcmToken(user.sub, body.token);
   }
 
@@ -81,12 +84,18 @@ export class UsersController {
   }
 
   @Delete('me/addresses/:index')
-  deleteMyAddress(@CurrentUser() user: JwtPayload, @Param('index') index: string) {
+  deleteMyAddress(
+    @CurrentUser() user: JwtPayload,
+    @Param('index') index: string,
+  ) {
     return this.usersService.deleteAddress(user.sub, Number(index));
   }
 
   @Patch('me/addresses/:index/default')
-  setMyDefaultAddress(@CurrentUser() user: JwtPayload, @Param('index') index: string) {
+  setMyDefaultAddress(
+    @CurrentUser() user: JwtPayload,
+    @Param('index') index: string,
+  ) {
     return this.usersService.setDefaultAddress(user.sub, Number(index));
   }
 
@@ -152,7 +161,10 @@ export class UsersController {
 
   @Roles('admin')
   @Patch(':id')
-  update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateUserDto) {
+  update(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateUserDto,
+  ) {
     return this.usersService.update(id, dto);
   }
 
@@ -164,7 +176,10 @@ export class UsersController {
 
   @Roles('admin')
   @Post(':id/address')
-  addAddress(@Param('id', ParseObjectIdPipe) id: string, @Body() address: AddressDto) {
+  addAddress(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() address: AddressDto,
+  ) {
     return this.usersService.addAddress(id, address);
   }
 

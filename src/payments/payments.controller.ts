@@ -25,14 +25,19 @@ export class PaymentsController {
 
   @Get('vnpay/return')
   @Public()
-  async handleReturn(@Query() query: Record<string, string>, @Res() res: Response) {
+  async handleReturn(
+    @Query() query: Record<string, string>,
+    @Res() res: Response,
+  ) {
     const result = await this.paymentsService.handleVnpayReturn(query);
     const success = result.status === 'paid' && result.code === '00';
     const template = this.renderReturnPage({
       success,
       orderCode: result.orderCode,
       amount: result.amount,
-      message: success ? 'Thanh toán thành công' : 'Thanh toán không thành công',
+      message: success
+        ? 'Thanh toán thành công'
+        : 'Thanh toán không thành công',
     });
     res.status(200).send(template);
   }
@@ -43,11 +48,19 @@ export class PaymentsController {
     return this.paymentsService.handleVnpayIpn(query);
   }
 
-  private renderReturnPage(payload: { success: boolean; orderCode?: string; amount?: number; message: string }) {
+  private renderReturnPage(payload: {
+    success: boolean;
+    orderCode?: string;
+    amount?: number;
+    message: string;
+  }) {
     const statusColor = payload.success ? '#16a34a' : '#ef4444';
     const amountText =
       payload.amount && Number.isFinite(payload.amount)
-        ? payload.amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' })
+        ? payload.amount.toLocaleString('vi-VN', {
+            style: 'currency',
+            currency: 'VND',
+          })
         : '';
     const deepLink = payload.orderCode
       ? `electronicsshop://payment/return?order=${encodeURIComponent(payload.orderCode)}&status=${payload.success ? 'paid' : 'failed'}`

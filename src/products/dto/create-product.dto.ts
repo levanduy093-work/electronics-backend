@@ -39,7 +39,10 @@ export class CreateProductDto {
     if (!value || typeof value !== 'object') return undefined;
     // Normalize spec values to string
     const entries = Object.entries(value as Record<string, any>)
-      .map(([k, v]) => [k, v === null || v === undefined ? '' : String(v).trim()])
+      .map(([k, v]) => [
+        k,
+        v === null || v === undefined ? '' : String(v).trim(),
+      ])
       .filter(([k, v]) => k && v);
     return Object.fromEntries(entries);
   })

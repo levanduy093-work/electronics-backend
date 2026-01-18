@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import type { ChangeStream } from 'mongodb';
 import { Connection } from 'mongoose';
@@ -17,7 +22,9 @@ export class DbChangeListener implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     try {
       // Lắng nghe mọi thay đổi trên toàn bộ database (insert/update/delete/replace)
-      this.changeStream = this.connection.watch([], { fullDocument: 'updateLookup' });
+      this.changeStream = this.connection.watch([], {
+        fullDocument: 'updateLookup',
+      });
 
       this.changeStream.on('change', (change) => {
         const payload: any = change as any;
@@ -39,13 +46,17 @@ export class DbChangeListener implements OnModuleInit, OnModuleDestroy {
       });
 
       this.changeStream.on('error', (error) => {
-        this.logger.warn(`MongoDB Change Stream error: ${error?.message || error}`);
+        this.logger.warn(
+          `MongoDB Change Stream error: ${error?.message || error}`,
+        );
       });
 
       this.logger.log('Global MongoDB Change Stream initialized');
     } catch (error: any) {
       // Replica set/sharded cluster required
-      this.logger.warn(`Could not initialize global MongoDB Change Stream: ${error?.message || error}`);
+      this.logger.warn(
+        `Could not initialize global MongoDB Change Stream: ${error?.message || error}`,
+      );
     }
   }
 

@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { JwtPayload } from '../common/types/jwt-payload';
@@ -35,7 +40,8 @@ export class CartsService {
   }
 
   async findAll(user: JwtPayload) {
-    const filter = user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    const filter =
+      user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
     const docs = await this.cartModel.find(filter).lean();
     return docs.map(this.strip);
   }
@@ -58,7 +64,9 @@ export class CartsService {
     const items = data.items
       ? data.items.map((item) => ({
           ...item,
-          productId: item.productId ? new Types.ObjectId(item.productId) : undefined,
+          productId: item.productId
+            ? new Types.ObjectId(item.productId)
+            : undefined,
         }))
       : existing.items || [];
 
@@ -86,7 +94,8 @@ export class CartsService {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
-    const availableStock = typeof product.stock === 'number' ? product.stock : 0;
+    const availableStock =
+      typeof product.stock === 'number' ? product.stock : 0;
     if (availableStock <= 0) {
       throw new BadRequestException('Sản phẩm đã hết hàng');
     }
@@ -116,7 +125,11 @@ export class CartsService {
         (current.quantity || 0) + finalQuantity,
         availableStock,
       );
-      items[existingIndex] = { ...current, ...baseItem, quantity: mergedQuantity };
+      items[existingIndex] = {
+        ...current,
+        ...baseItem,
+        quantity: mergedQuantity,
+      };
     } else {
       items.push(baseItem);
     }
@@ -138,7 +151,10 @@ export class CartsService {
     return this.strip(updated);
   }
 
-  private ensureOwnerOrAdmin(ownerId: Types.ObjectId | undefined, user: JwtPayload) {
+  private ensureOwnerOrAdmin(
+    ownerId: Types.ObjectId | undefined,
+    user: JwtPayload,
+  ) {
     if (user.role === 'admin') return;
     if (!ownerId || ownerId.toString() !== user.sub) {
       throw new ForbiddenException('Access denied');
@@ -155,7 +171,10 @@ export class CartsService {
       (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
       0,
     );
-    const totalItem = (items || []).reduce((sum, item) => sum + (item.quantity || 0), 0);
+    const totalItem = (items || []).reduce(
+      (sum, item) => sum + (item.quantity || 0),
+      0,
+    );
     const totalPrice = subTotal + (shippingFee || 0);
     return { shippingFee, subTotal, totalItem, totalPrice };
   }

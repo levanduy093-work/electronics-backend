@@ -62,7 +62,10 @@ export class TransactionsService {
 
   private async backfillCodTransactions() {
     const codOrders = await this.orderModel
-      .find({ payment: { $regex: /cod/i } }, { _id: 1, userId: 1, totalPrice: 1, paymentStatus: 1 })
+      .find(
+        { payment: { $regex: /cod/i } },
+        { _id: 1, userId: 1, totalPrice: 1, paymentStatus: 1 },
+      )
       .lean();
     if (!codOrders.length) return;
 
@@ -70,9 +73,13 @@ export class TransactionsService {
     const existing = await this.transactionModel
       .find({ orderId: { $in: orderIds }, provider: 'cod' }, { orderId: 1 })
       .lean();
-    const existingIds = new Set(existing.map((t) => t.orderId?.toString?.() || ''));
+    const existingIds = new Set(
+      existing.map((t) => t.orderId?.toString?.() || ''),
+    );
 
-    const missing = codOrders.filter((o) => !existingIds.has(o._id?.toString?.() || ''));
+    const missing = codOrders.filter(
+      (o) => !existingIds.has(o._id?.toString?.() || ''),
+    );
     if (!missing.length) return;
 
     const now = new Date().toISOString();

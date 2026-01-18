@@ -114,6 +114,7 @@ export class Order {
 
 export type OrderDocument = HydratedDocument<Order>;
 export const OrderStatusSchema = SchemaFactory.createForClass(OrderStatus);
-export const ShippingAddressSchema = SchemaFactory.createForClass(ShippingAddress);
+export const ShippingAddressSchema =
+  SchemaFactory.createForClass(ShippingAddress);
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 export const OrderSchema = SchemaFactory.createForClass(Order);

@@ -84,13 +84,21 @@ export class AuthService {
       email: dto.email.toLowerCase(),
       passwordHashed,
     };
-    const { code, expiresAt } = await this.otpService.createCode(dto.email, 'register', payload);
+    const { code, expiresAt } = await this.otpService.createCode(
+      dto.email,
+      'register',
+      payload,
+    );
     await this.mailService.sendOtp(dto.email, code, expiresAt);
     return { message: 'OTP has been sent to your email' };
   }
 
   async verifyRegisterOtp(dto: VerifyOtpDto) {
-    const payload = await this.otpService.verifyCode(dto.email, 'register', dto.code);
+    const payload = await this.otpService.verifyCode(
+      dto.email,
+      'register',
+      dto.code,
+    );
     if (!payload?.passwordHashed) {
       throw new UnauthorizedException('Invalid OTP payload');
     }
@@ -119,7 +127,10 @@ export class AuthService {
     const payload = { sub: userId, email, role };
     return {
       accessToken: this.jwtService.sign(payload, { expiresIn: '30m' }),
-      refreshToken: this.jwtService.sign(payload, { secret: refreshSecret, expiresIn: '30d' }),
+      refreshToken: this.jwtService.sign(payload, {
+        secret: refreshSecret,
+        expiresIn: '30d',
+      }),
     };
   }
 
@@ -129,7 +140,11 @@ export class AuthService {
       throw new Error('REFRESH_SECRET must be provided');
     }
     try {
-      return this.jwtService.verifyAsync<{ sub: string; email: string; role?: string }>(token, {
+      return this.jwtService.verifyAsync<{
+        sub: string;
+        email: string;
+        role?: string;
+      }>(token, {
         secret: refreshSecret,
       });
     } catch (_err) {
@@ -138,7 +153,7 @@ export class AuthService {
   }
 
   private toSafeUser(user: any) {
-    const { passwordHashed, __v, ...safeUser } = user as any;
+    const { passwordHashed, __v, ...safeUser } = user;
     return safeUser;
   }
 
@@ -147,7 +162,10 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Email không tồn tại');
     }
-    const { code, expiresAt } = await this.otpService.createCode(dto.email, 'reset-password');
+    const { code, expiresAt } = await this.otpService.createCode(
+      dto.email,
+      'reset-password',
+    );
     await this.mailService.sendOtp(dto.email, code, expiresAt);
     return { message: 'Đã gửi mã xác nhận đến email của bạn' };
   }
@@ -172,18 +190,29 @@ export class AuthService {
     }
     let payload: { email: string; purpose: string };
     try {
-      payload = await this.jwtService.verifyAsync(dto.resetToken, { secret: resetSecret });
+      payload = await this.jwtService.verifyAsync(dto.resetToken, {
+        secret: resetSecret,
+      });
     } catch (_err) {
-      throw new UnauthorizedException('Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn');
+      throw new UnauthorizedException(
+        'Token đặt lại mật khẩu không hợp lệ hoặc đã hết hạn',
+      );
     }
-    if (!payload || payload.email !== dto.email.toLowerCase() || payload.purpose !== 'reset-password') {
+    if (
+      !payload ||
+      payload.email !== dto.email.toLowerCase() ||
+      payload.purpose !== 'reset-password'
+    ) {
       throw new UnauthorizedException('Token đặt lại mật khẩu không hợp lệ');
     }
     const user = await this.usersService.findByEmail(dto.email.toLowerCase());
     if (!user) {
       throw new UnauthorizedException('Email không tồn tại');
     }
-    await this.usersService.updatePasswordByEmail(dto.email.toLowerCase(), dto.newPassword);
+    await this.usersService.updatePasswordByEmail(
+      dto.email.toLowerCase(),
+      dto.newPassword,
+    );
     return { message: 'Đổi mật khẩu thành công' };
   }
 
@@ -191,17 +220,26 @@ export class AuthService {
     if (!user?.email) {
       throw new UnauthorizedException('User not authenticated');
     }
-    const existing = await this.usersService.findByEmail(user.email.toLowerCase());
+    const existing = await this.usersService.findByEmail(
+      user.email.toLowerCase(),
+    );
     if (!existing) {
       throw new UnauthorizedException('User not found');
     }
-    const isValid = await this.usersService.comparePassword(existing, dto.currentPassword);
+    const isValid = await this.usersService.comparePassword(
+      existing,
+      dto.currentPassword,
+    );
     if (!isValid) {
       throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
     }
-    const { code, expiresAt } = await this.otpService.createCode(user.email, 'change-password', {
-      userId: user.sub,
-    });
+    const { code, expiresAt } = await this.otpService.createCode(
+      user.email,
+      'change-password',
+      {
+        userId: user.sub,
+      },
+    );
     await this.mailService.sendOtp(user.email, code, expiresAt);
     return { message: 'Đã gửi mã xác nhận đến email của bạn' };
   }
@@ -210,19 +248,31 @@ export class AuthService {
     if (!user?.email) {
       throw new UnauthorizedException('User not authenticated');
     }
-    const existing = await this.usersService.findByEmail(user.email.toLowerCase());
+    const existing = await this.usersService.findByEmail(
+      user.email.toLowerCase(),
+    );
     if (!existing) {
       throw new UnauthorizedException('User not found');
     }
-    const isValid = await this.usersService.comparePassword(existing, dto.currentPassword);
+    const isValid = await this.usersService.comparePassword(
+      existing,
+      dto.currentPassword,
+    );
     if (!isValid) {
       throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
     }
-    const payload = await this.otpService.verifyCode(user.email, 'change-password', dto.code);
+    const payload = await this.otpService.verifyCode(
+      user.email,
+      'change-password',
+      dto.code,
+    );
     if (payload?.userId && payload.userId !== user.sub) {
       throw new UnauthorizedException('Mã OTP không hợp lệ');
     }
-    await this.usersService.updatePasswordByEmail(user.email.toLowerCase(), dto.newPassword);
+    await this.usersService.updatePasswordByEmail(
+      user.email.toLowerCase(),
+      dto.newPassword,
+    );
     return { message: 'Đổi mật khẩu thành công' };
   }
 }

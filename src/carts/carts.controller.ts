@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -24,7 +33,10 @@ export class CartsController {
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
+  findOne(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
     return this.cartsService.findOne(id, user);
   }
 
@@ -38,7 +50,10 @@ export class CartsController {
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser() user: JwtPayload) {
+  remove(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
     return this.cartsService.remove(id, user);
   }
 

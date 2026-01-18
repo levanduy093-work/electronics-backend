@@ -13,7 +13,7 @@ export class VouchersService {
     private readonly voucherModel: Model<VoucherDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
-  ) { }
+  ) {}
 
   async create(data: CreateVoucherDto) {
     const created = await this.voucherModel.create({
@@ -30,14 +30,20 @@ export class VouchersService {
 
   async findAvailable() {
     const now = new Date();
-    const docs = await this.voucherModel.find({ expire: { $gte: now } }).sort({ expire: 1 }).lean();
+    const docs = await this.voucherModel
+      .find({ expire: { $gte: now } })
+      .sort({ expire: 1 })
+      .lean();
     return docs.map((doc) => this.stripWithDefaults(doc));
   }
 
   async findForUser(userId: string) {
     const now = new Date();
     const [globalVouchers, user] = await Promise.all([
-      this.voucherModel.find({ expire: { $gte: now } }).sort({ expire: 1 }).lean(),
+      this.voucherModel
+        .find({ expire: { $gte: now } })
+        .sort({ expire: 1 })
+        .lean(),
       this.userModel.findById(userId).select('voucher').lean(),
     ]);
 

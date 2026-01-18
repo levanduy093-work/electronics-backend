@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -39,7 +48,10 @@ export class ReviewsController {
 
   @Patch(':id')
   @Roles('admin')
-  update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateReviewDto) {
+  update(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateReviewDto,
+  ) {
     return this.reviewsService.update(id, dto);
   }
 

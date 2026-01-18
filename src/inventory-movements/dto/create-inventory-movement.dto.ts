@@ -1,4 +1,11 @@
-import { IsIn, IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsIn,
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class CreateInventoryMovementDto {
   @IsMongoId()

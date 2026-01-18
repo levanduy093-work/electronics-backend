@@ -43,7 +43,10 @@ export class UploadController {
   }
 
   @Post('image/by-url')
-  async uploadImageByUrl(@Body() body: UploadImageByUrlDto, @Query('folder') folder?: string) {
+  async uploadImageByUrl(
+    @Body() body: UploadImageByUrlDto,
+    @Query('folder') folder?: string,
+  ) {
     const safeFolder = sanitizeFolder(folder);
     return this.cloudinaryService.uploadImageByUrl(body.url, safeFolder);
   }

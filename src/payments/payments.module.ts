@@ -3,7 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { OrdersModule } from '../orders/orders.module';
 import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { TransactionsModule } from '../transactions/transactions.module';
-import { Transaction, TransactionSchema } from '../transactions/schemas/transaction.schema';
+import {
+  Transaction,
+  TransactionSchema,
+} from '../transactions/schemas/transaction.schema';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 

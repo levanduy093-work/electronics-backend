@@ -32,6 +32,7 @@ export class ChatSession {
 }
 
 export type ChatSessionDocument = HydratedDocument<ChatSession>;
-export const MessageContentSchema = SchemaFactory.createForClass(MessageContent);
+export const MessageContentSchema =
+  SchemaFactory.createForClass(MessageContent);
 export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
 export const ChatSessionSchema = SchemaFactory.createForClass(ChatSession);

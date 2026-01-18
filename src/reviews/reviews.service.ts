@@ -46,7 +46,7 @@ export class ReviewsService {
 
   async findAll() {
     const docs = await this.reviewModel.find().sort({ updatedAt: -1 }).lean();
-    return this.attachUserNames(docs).then(items => items.map(this.strip));
+    return this.attachUserNames(docs).then((items) => items.map(this.strip));
   }
 
   async findOne(id: string) {
@@ -72,7 +72,9 @@ export class ReviewsService {
       .findByIdAndUpdate(id, mapped, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Review not found');
-    await this.updateProductStats((mapped.productId || doc.productId).toString());
+    await this.updateProductStats(
+      (mapped.productId || doc.productId).toString(),
+    );
     return this.strip(doc);
   }
 
@@ -113,7 +115,9 @@ export class ReviewsService {
   }
 
   private async attachUserNames(docs: Partial<Review>[]) {
-    const missing = docs.filter((d) => !d.userName && d.userId).map((d) => d.userId?.toString());
+    const missing = docs
+      .filter((d) => !d.userName && d.userId)
+      .map((d) => d.userId?.toString());
     const uniqueIds = Array.from(new Set(missing.filter(Boolean) as string[]));
     let userMap = new Map<string, string>();
     if (uniqueIds.length) {
@@ -121,14 +125,18 @@ export class ReviewsService {
         .find({ _id: { $in: uniqueIds.map((id) => new Types.ObjectId(id)) } })
         .select({ name: 1 })
         .lean();
-      userMap = new Map(users.map((u) => [u._id.toString(), (u.name || '').trim()]));
+      userMap = new Map(
+        users.map((u) => [u._id.toString(), (u.name || '').trim()]),
+      );
     }
 
     const updates: { _id: any; userName: string }[] = [];
     const enriched = docs.map((doc) => {
       const resolved =
-        (doc.userName as string | undefined)?.trim() ||
-        (doc.userId ? userMap.get((doc.userId as any)?.toString()) : undefined) ||
+        doc.userName?.trim() ||
+        (doc.userId
+          ? userMap.get((doc.userId as any)?.toString())
+          : undefined) ||
         'Khách hàng';
       const anyDoc = doc as any;
       if (resolved && resolved !== doc.userName && anyDoc._id) {
@@ -141,7 +149,9 @@ export class ReviewsService {
       const bulkOps = updates.map((u) => ({
         updateOne: { filter: { _id: u._id }, update: { userName: u.userName } },
       }));
-      await this.reviewModel.bulkWrite(bulkOps, { ordered: false }).catch(() => undefined);
+      await this.reviewModel
+        .bulkWrite(bulkOps, { ordered: false })
+        .catch(() => undefined);
     }
 
     return enriched;

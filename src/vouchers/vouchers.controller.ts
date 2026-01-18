@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/types/jwt-payload';
@@ -44,7 +53,10 @@ export class VouchersController {
 
   @Patch(':id')
   @Roles('admin')
-  update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateVoucherDto) {
+  update(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateVoucherDto,
+  ) {
     return this.vouchersService.update(id, dto);
   }
 

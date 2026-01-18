@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, OnModuleInit, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -12,9 +17,7 @@ export class ProductsService implements OnModuleInit {
 
   private cleanImages(images?: string[]) {
     if (!images || !images.length) return [];
-    return images
-      .map((url) => (url || '').trim())
-      .filter(Boolean);
+    return images.map((url) => (url || '').trim()).filter(Boolean);
   }
 
   constructor(
@@ -28,33 +31,42 @@ export class ProductsService implements OnModuleInit {
       const changeStream = this.productModel.watch();
       changeStream.on('change', async (change) => {
         // Chỉ xử lý các thay đổi dạng update, insert, delete
-        if (['insert', 'update', 'replace', 'delete'].includes(change.operationType)) {
+        if (
+          ['insert', 'update', 'replace', 'delete'].includes(
+            change.operationType,
+          )
+        ) {
           this.logger.log(`Detected DB Change: ${change.operationType}`);
-          
+
           // Với direct DB update, ta có thể không lấy được full document ngay
           // Nên ta bắn một sự kiện chung hoặc cố gắng lấy documentId
           let productId = null;
           if ('documentKey' in change) {
-             productId = change.documentKey._id;
+            productId = change.documentKey._id;
           }
 
           if (productId) {
-             const doc = await this.productModel.findById(productId).lean();
-             if (doc) {
-                this.eventsGateway.emitProductUpdated(this.strip(doc));
-             }
+            const doc = await this.productModel.findById(productId).lean();
+            if (doc) {
+              this.eventsGateway.emitProductUpdated(this.strip(doc));
+            }
           }
         }
       });
-      
+
       changeStream.on('error', (error) => {
-         // Change Stream yêu cầu Replica Set. Bỏ qua nếu là Standalone.
-         this.logger.warn('MongoDB Change Stream error (Replica Set required?): ' + error.message);
+        // Change Stream yêu cầu Replica Set. Bỏ qua nếu là Standalone.
+        this.logger.warn(
+          'MongoDB Change Stream error (Replica Set required?): ' +
+            error.message,
+        );
       });
-      
+
       this.logger.log('MongoDB Change Stream initialized');
     } catch (error) {
-      this.logger.warn('Could not initialize MongoDB Change Stream: ' + error.message);
+      this.logger.warn(
+        'Could not initialize MongoDB Change Stream: ' + error.message,
+      );
     }
   }
 
@@ -97,29 +109,29 @@ export class ProductsService implements OnModuleInit {
     if (!product) throw new NotFoundException('Product not found');
 
     const pipeline: any[] = [
-       { $match: { _id: { $ne: new Types.ObjectId(id) } } }
+      { $match: { _id: { $ne: new Types.ObjectId(id) } } },
     ];
-    
+
     if (product.category) {
-       pipeline.push({ $match: { category: product.category } });
+      pipeline.push({ $match: { category: product.category } });
     }
-    
+
     pipeline.push({ $limit: 6 });
     pipeline.push(...this.buildReviewStatsPipeline());
     pipeline.push({ $project: { reviewStats: 0 } });
-    
+
     let docs = await this.productModel.aggregate(pipeline).exec();
-    
+
     if (docs.length < 4) {
-       const excludeIds = [new Types.ObjectId(id), ...docs.map(d => d._id)];
-       const morePipeline = [
-          { $match: { _id: { $nin: excludeIds } } },
-          { $limit: 6 - docs.length },
-          ...this.buildReviewStatsPipeline(),
-          { $project: { reviewStats: 0 } }
-       ];
-       const more = await this.productModel.aggregate(morePipeline).exec();
-       docs = [...docs, ...more];
+      const excludeIds = [new Types.ObjectId(id), ...docs.map((d) => d._id)];
+      const morePipeline = [
+        { $match: { _id: { $nin: excludeIds } } },
+        { $limit: 6 - docs.length },
+        ...this.buildReviewStatsPipeline(),
+        { $project: { reviewStats: 0 } },
+      ];
+      const more = await this.productModel.aggregate(morePipeline).exec();
+      docs = [...docs, ...more];
     }
 
     return docs.map(this.strip);
@@ -134,10 +146,10 @@ export class ProductsService implements OnModuleInit {
       .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Product not found');
-    
+
     // Emit event when product is updated
     this.eventsGateway.emitProductUpdated(this.strip(doc));
-    
+
     return this.strip(doc);
   }
 
@@ -177,8 +189,12 @@ export class ProductsService implements OnModuleInit {
       },
       {
         $addFields: {
-          averageRating: { $ifNull: [{ $arrayElemAt: ['$reviewStats.avgRating', 0] }, 0] },
-          reviewCount: { $ifNull: [{ $arrayElemAt: ['$reviewStats.count', 0] }, 0] },
+          averageRating: {
+            $ifNull: [{ $arrayElemAt: ['$reviewStats.avgRating', 0] }, 0],
+          },
+          reviewCount: {
+            $ifNull: [{ $arrayElemAt: ['$reviewStats.count', 0] }, 0],
+          },
         },
       },
     ];

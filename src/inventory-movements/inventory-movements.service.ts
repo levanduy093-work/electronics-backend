@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { CreateInventoryMovementDto } from './dto/create-inventory-movement.dto';
@@ -27,7 +31,9 @@ export class InventoryMovementsService {
     if (nextStock < 0) {
       throw new BadRequestException('Không đủ tồn kho để xuất kho');
     }
-    await this.productModel.findByIdAndUpdate(product._id, { stock: nextStock });
+    await this.productModel.findByIdAndUpdate(product._id, {
+      stock: nextStock,
+    });
 
     const created = await this.movementModel.create({
       ...data,
@@ -53,7 +59,7 @@ export class InventoryMovementsService {
 
     const nextProductId = data.productId
       ? new Types.ObjectId(data.productId)
-      : (existing.productId as Types.ObjectId);
+      : existing.productId;
     const nextType = data.type ?? existing.type;
     const nextQuantity = data.quantity ?? existing.quantity;
 
@@ -87,7 +93,9 @@ export class InventoryMovementsService {
     if (nextStock < 0) {
       throw new BadRequestException('Không thể xóa phiếu kho vì tồn kho sẽ âm');
     }
-    await this.productModel.findByIdAndUpdate(product._id, { stock: nextStock });
+    await this.productModel.findByIdAndUpdate(product._id, {
+      stock: nextStock,
+    });
 
     const removed = await this.movementModel.findByIdAndDelete(id).lean();
     if (!removed) throw new NotFoundException('Inventory movement not found');
@@ -107,7 +115,7 @@ export class InventoryMovementsService {
 
     const stringifyId = (value?: Types.ObjectId | string) =>
       value && typeof value !== 'string' && 'toString' in value
-        ? (value as Types.ObjectId).toString()
+        ? value.toString()
         : value;
     const normalizeDate = (value?: Date | string) =>
       value ? new Date(value).toISOString() : undefined;
@@ -133,7 +141,14 @@ export class InventoryMovementsService {
     nextType: string;
     nextQuantity: number;
   }) {
-    const { prevProductId, prevType, prevQuantity, nextProductId, nextType, nextQuantity } = params;
+    const {
+      prevProductId,
+      prevType,
+      prevQuantity,
+      nextProductId,
+      nextType,
+      nextQuantity,
+    } = params;
     const prevDelta = this.toDelta(prevType, prevQuantity);
     const nextDelta = this.toDelta(nextType, nextQuantity);
 
@@ -148,7 +163,9 @@ export class InventoryMovementsService {
       if (candidate < 0) {
         throw new BadRequestException('Không đủ tồn kho để xuất kho');
       }
-      await this.productModel.findByIdAndUpdate(prevProductId, { stock: candidate });
+      await this.productModel.findByIdAndUpdate(prevProductId, {
+        stock: candidate,
+      });
       return;
     }
 
@@ -156,7 +173,9 @@ export class InventoryMovementsService {
     if (!prevProduct) throw new NotFoundException('Product not found');
     const revertedStock = (prevProduct.stock ?? 0) - prevDelta;
     if (revertedStock < 0) {
-      throw new BadRequestException('Không thể cập nhật phiếu kho vì tồn kho sẽ âm');
+      throw new BadRequestException(
+        'Không thể cập nhật phiếu kho vì tồn kho sẽ âm',
+      );
     }
 
     const nextProduct = await this.productModel.findById(nextProductId);
@@ -166,7 +185,11 @@ export class InventoryMovementsService {
       throw new BadRequestException('Không đủ tồn kho để xuất kho');
     }
 
-    await this.productModel.findByIdAndUpdate(prevProductId, { stock: revertedStock });
-    await this.productModel.findByIdAndUpdate(nextProductId, { stock: nextCandidate });
+    await this.productModel.findByIdAndUpdate(prevProductId, {
+      stock: revertedStock,
+    });
+    await this.productModel.findByIdAndUpdate(nextProductId, {
+      stock: nextCandidate,
+    });
   }
 }

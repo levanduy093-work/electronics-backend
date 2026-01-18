@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -29,7 +38,10 @@ export class ShipmentsController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateShipmentDto) {
+  update(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: UpdateShipmentDto,
+  ) {
     return this.shipmentsService.update(id, dto);
   }
 

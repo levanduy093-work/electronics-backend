@@ -13,7 +13,11 @@ export class OtpService {
     private readonly configService: ConfigService,
   ) {}
 
-  async createCode(email: string, purpose: string, payload?: Record<string, any>) {
+  async createCode(
+    email: string,
+    purpose: string,
+    payload?: Record<string, any>,
+  ) {
     const code = this.generateCode();
     const codeHashed = await bcrypt.hash(code, 10);
     const ttlSeconds = this.configService.get<number>('OTP_TTL_SECONDS') ?? 600; // 10 minutes
