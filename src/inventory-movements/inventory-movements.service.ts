@@ -12,6 +12,7 @@ import {
   InventoryMovementDocument,
 } from './schemas/inventory-movement.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class InventoryMovementsService {
@@ -39,18 +40,18 @@ export class InventoryMovementsService {
       ...data,
       productId: new Types.ObjectId(data.productId),
     });
-    return this.strip(created.toObject());
+    return this.normalizeDocument(stripDocument(created.toObject()));
   }
 
   async findAll() {
     const docs = await this.movementModel.find().lean();
-    return docs.map(this.strip);
+    return docs.map((doc) => this.normalizeDocument(stripDocument(doc)));
   }
 
   async findOne(id: string) {
     const doc = await this.movementModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Inventory movement not found');
-    return this.strip(doc);
+    return this.normalizeDocument(stripDocument(doc));
   }
 
   async update(id: string, data: UpdateInventoryMovementDto) {
@@ -78,7 +79,7 @@ export class InventoryMovementsService {
       .findByIdAndUpdate(id, mapped, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Inventory movement not found');
-    return this.strip(doc);
+    return this.normalizeDocument(stripDocument(doc));
   }
 
   async remove(id: string) {
@@ -99,20 +100,10 @@ export class InventoryMovementsService {
 
     const removed = await this.movementModel.findByIdAndDelete(id).lean();
     if (!removed) throw new NotFoundException('Inventory movement not found');
-    return this.strip(removed);
+    return this.normalizeDocument(stripDocument(removed));
   }
 
-  private strip = (doc: Partial<InventoryMovement>) => {
-    const { __v, ...rest } = doc as Partial<
-      InventoryMovement & {
-        __v?: number;
-        _id?: Types.ObjectId | string;
-        productId?: Types.ObjectId | string;
-        createdAt?: Date | string;
-        updatedAt?: Date | string;
-      }
-    >;
-
+  private normalizeDocument(doc: Partial<InventoryMovement> & { _id?: Types.ObjectId | string; createdAt?: Date | string; updatedAt?: Date | string }) {
     const stringifyId = (value?: Types.ObjectId | string) =>
       value && typeof value !== 'string' && 'toString' in value
         ? value.toString()
@@ -121,13 +112,13 @@ export class InventoryMovementsService {
       value ? new Date(value).toISOString() : undefined;
 
     return {
-      ...rest,
-      _id: stringifyId(rest._id),
-      productId: stringifyId(rest.productId),
-      createdAt: normalizeDate(rest.createdAt ?? (doc as any).createdAt),
-      updatedAt: normalizeDate(rest.updatedAt ?? (doc as any).updatedAt),
+      ...doc,
+      _id: stringifyId(doc._id),
+      productId: stringifyId(doc.productId as Types.ObjectId | string | undefined),
+      createdAt: normalizeDate(doc.createdAt),
+      updatedAt: normalizeDate(doc.updatedAt),
     };
-  };
+  }
 
   private toDelta(type: string, quantity: number) {
     return type === 'inbound' ? quantity : -quantity;

@@ -5,6 +5,7 @@ import { CreateShipmentDto } from './dto/create-shipment.dto';
 import { UpdateShipmentDto } from './dto/update-shipment.dto';
 import { Shipment, ShipmentDocument } from './schemas/shipment.schema';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class ShipmentsService {
@@ -27,21 +28,22 @@ export class ShipmentsService {
       mapped.statusHistory = [{ status: mapped.status, at: new Date() }];
     }
     const created = await this.shipmentModel.create(mapped);
-    const result = this.strip(created.toObject());
+    const stripped = stripDocument(created.toObject());
+    const result = this.ensureExpectedDelivery(stripped);
     await this.syncPaymentToOrder(result.orderId, result.paymentStatus);
     return result;
   }
 
   async findAll() {
     const docs = await this.shipmentModel.find().lean();
-    return docs.map(this.strip);
+    return docs.map((doc) => this.ensureExpectedDelivery(stripDocument(doc)));
   }
 
   async findByOrderId(orderId: string) {
     const doc = await this.shipmentModel
       .findOne({ orderId: new Types.ObjectId(orderId) })
       .lean();
-    return doc ? this.strip(doc) : null;
+    return doc ? this.ensureExpectedDelivery(stripDocument(doc)) : null;
   }
 
   async removeByOrderId(orderId: string) {
@@ -53,7 +55,7 @@ export class ShipmentsService {
   async findOne(id: string) {
     const doc = await this.shipmentModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Shipment not found');
-    return this.strip(doc);
+    return this.ensureExpectedDelivery(stripDocument(doc));
   }
 
   async update(id: string, data: UpdateShipmentDto) {
@@ -73,7 +75,8 @@ export class ShipmentsService {
       .findByIdAndUpdate(id, payload, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Shipment not found');
-    const result = this.strip(doc);
+    const stripped = stripDocument(doc);
+    const result = this.ensureExpectedDelivery(stripped);
     await this.syncPaymentToOrder(
       result.orderId,
       payload.paymentStatus ?? result.paymentStatus,
@@ -84,7 +87,7 @@ export class ShipmentsService {
   async remove(id: string) {
     const doc = await this.shipmentModel.findByIdAndDelete(id).lean();
     if (!doc) throw new NotFoundException('Shipment not found');
-    return this.strip(doc);
+    return this.ensureExpectedDelivery(stripDocument(doc));
   }
 
   private mapDto(data: Partial<CreateShipmentDto>) {
@@ -119,14 +122,13 @@ export class ShipmentsService {
       .exec();
   }
 
-  private strip = (doc: Partial<Shipment>) => {
-    const { __v, ...rest } = doc as Partial<Shipment & { __v?: number }>;
-    const createdAt = (rest as any)?.createdAt;
-    if (!rest.expectedDelivery && createdAt) {
-      rest.expectedDelivery = this.getDefaultExpectedDelivery(
+  private ensureExpectedDelivery(doc: Partial<Shipment>) {
+    const createdAt = (doc as any)?.createdAt;
+    if (!doc.expectedDelivery && createdAt) {
+      doc.expectedDelivery = this.getDefaultExpectedDelivery(
         new Date(createdAt),
       );
     }
-    return rest;
-  };
+    return doc;
+  }
 }
