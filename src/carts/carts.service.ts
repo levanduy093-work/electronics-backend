@@ -11,6 +11,7 @@ import { CreateCartDto } from './dto/create-cart.dto';
 import { UpdateCartDto } from './dto/update-cart.dto';
 import { Cart, CartDocument } from './schemas/cart.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class CartsService {
@@ -36,21 +37,21 @@ export class CartsService {
       items,
       ...totals,
     });
-    return this.strip(created.toObject());
+    return stripDocument(created.toObject());
   }
 
   async findAll(user: JwtPayload) {
     const filter =
       user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
     const docs = await this.cartModel.find(filter).lean();
-    return docs.map(this.strip);
+    return docs.map(stripDocument);
   }
 
   async findOne(id: string, user: JwtPayload) {
     const doc = await this.cartModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Cart not found');
     this.ensureOwnerOrAdmin(doc.userId, user);
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async update(id: string, data: UpdateCartDto, user: JwtPayload) {
@@ -78,7 +79,7 @@ export class CartsService {
       .findByIdAndUpdate(id, mapped, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Cart not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async remove(id: string, user: JwtPayload) {
@@ -86,7 +87,7 @@ export class CartsService {
     if (!doc) throw new NotFoundException('Cart not found');
     this.ensureOwnerOrAdmin(doc.userId, user);
     await this.cartModel.findByIdAndDelete(id).lean();
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async addItemForUser(user: JwtPayload, productId: string, quantity: number) {
@@ -148,7 +149,7 @@ export class CartsService {
     if (!updated) {
       throw new NotFoundException('Cart not found');
     }
-    return this.strip(updated);
+    return stripDocument(updated);
   }
 
   private ensureOwnerOrAdmin(
@@ -160,11 +161,6 @@ export class CartsService {
       throw new ForbiddenException('Access denied');
     }
   }
-
-  private strip = (doc: Partial<Cart>) => {
-    const { __v, ...rest } = doc as Partial<Cart & { __v?: number }>;
-    return rest;
-  };
 
   private recalculate(items: any[], shippingFee: number) {
     const subTotal = (items || []).reduce(

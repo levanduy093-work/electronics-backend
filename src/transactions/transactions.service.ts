@@ -5,6 +5,7 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class TransactionsService {
@@ -22,18 +23,18 @@ export class TransactionsService {
       userId: new Types.ObjectId(data.userId),
       paidAt: data.paidAt ? new Date(data.paidAt) : undefined,
     });
-    return this.strip(created.toObject());
+    return stripDocument(created.toObject());
   }
 
   async findAll() {
     const docs = await this.transactionModel.find().lean();
-    return docs.map(this.strip);
+    return docs.map(stripDocument);
   }
 
   async findOne(id: string) {
     const doc = await this.transactionModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Transaction not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async update(id: string, data: UpdateTransactionDto) {
@@ -46,19 +47,14 @@ export class TransactionsService {
       .findByIdAndUpdate(id, mapped, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Transaction not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async remove(id: string) {
     const doc = await this.transactionModel.findByIdAndDelete(id).lean();
     if (!doc) throw new NotFoundException('Transaction not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
-
-  private strip = (doc: Partial<Transaction>) => {
-    const { __v, ...rest } = doc as Partial<Transaction & { __v?: number }>;
-    return rest;
-  };
 
   private async backfillCodTransactions() {
     const codOrders = await this.orderModel

@@ -15,6 +15,7 @@ import {
   ChatMessageDto,
 } from './dto/create-chat-session.dto';
 import { UpdateChatSessionDto } from './dto/update-chat-session.dto';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class ChatService {
@@ -29,21 +30,21 @@ export class ChatService {
       userId: new Types.ObjectId(user.sub),
       messages: data.messages?.map(this.mapMessage),
     });
-    return this.strip(created.toObject());
+    return stripDocument(created.toObject());
   }
 
   async findAll(user: JwtPayload) {
     const filter =
       user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
     const docs = await this.chatModel.find(filter).lean();
-    return docs.map(this.strip);
+    return docs.map(stripDocument);
   }
 
   async findOne(id: string, user: JwtPayload) {
     const doc = await this.chatModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Chat session not found');
     this.ensureOwnerOrAdmin(doc.userId, user);
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async update(id: string, data: UpdateChatSessionDto, user: JwtPayload) {
@@ -57,7 +58,7 @@ export class ChatService {
       .findByIdAndUpdate(id, mapped, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Chat session not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async addMessage(id: string, message: ChatMessageDto, user: JwtPayload) {
@@ -66,7 +67,7 @@ export class ChatService {
     this.ensureOwnerOrAdmin(doc.userId, user);
     doc.messages.push(this.mapMessage(message));
     await doc.save();
-    return this.strip(doc.toObject());
+    return stripDocument(doc.toObject());
   }
 
   async remove(id: string, user: JwtPayload) {
@@ -74,7 +75,7 @@ export class ChatService {
     if (!doc) throw new NotFoundException('Chat session not found');
     this.ensureOwnerOrAdmin(doc.userId, user);
     await this.chatModel.findByIdAndDelete(id).lean();
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   private mapMessage = (msg: ChatMessageDto) => ({
@@ -95,9 +96,4 @@ export class ChatService {
       throw new ForbiddenException('Access denied');
     }
   }
-
-  private strip = (doc: Partial<ChatSession>) => {
-    const { __v, ...rest } = doc as Partial<ChatSession & { __v?: number }>;
-    return rest;
-  };
 }

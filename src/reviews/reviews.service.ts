@@ -7,6 +7,7 @@ import { UpdateReviewDto } from './dto/update-review.dto';
 import { Review, ReviewDocument } from './schemas/review.schema';
 import { Product } from '../products/schemas/product.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class ReviewsService {
@@ -41,19 +42,19 @@ export class ReviewsService {
 
     await this.updateProductStats(data.productId);
     if (!doc) throw new NotFoundException('Review not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async findAll() {
     const docs = await this.reviewModel.find().sort({ updatedAt: -1 }).lean();
-    return this.attachUserNames(docs).then((items) => items.map(this.strip));
+    return this.attachUserNames(docs).then((items) => items.map(stripDocument));
   }
 
   async findOne(id: string) {
     const doc = await this.reviewModel.findById(id).lean();
     if (!doc) throw new NotFoundException('Review not found');
     const [withName] = await this.attachUserNames([doc]);
-    return this.strip(withName);
+    return stripDocument(withName);
   }
 
   async findByProduct(productId: string) {
@@ -62,7 +63,7 @@ export class ReviewsService {
       .sort({ updatedAt: -1, createdAt: -1 })
       .lean();
     const enriched = await this.attachUserNames(docs);
-    return enriched.map(this.strip);
+    return enriched.map(stripDocument);
   }
 
   async update(id: string, data: UpdateReviewDto) {
@@ -75,7 +76,7 @@ export class ReviewsService {
     await this.updateProductStats(
       (mapped.productId || doc.productId).toString(),
     );
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async remove(id: string) {
@@ -83,13 +84,8 @@ export class ReviewsService {
     if (!doc) throw new NotFoundException('Review not found');
     await this.updateProductStats(doc.productId.toString());
     if (!doc) throw new NotFoundException('Review not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
-
-  private strip = (doc: Partial<Review>) => {
-    const { __v, ...rest } = doc as Partial<Review & { __v?: number }>;
-    return rest;
-  };
 
   private async updateProductStats(productId: string) {
     const objectId = new Types.ObjectId(productId);

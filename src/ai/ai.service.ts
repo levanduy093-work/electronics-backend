@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
   UnauthorizedException,
@@ -115,6 +116,7 @@ type PendingAction = {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   private readonly pendingActions = new Map<string, PendingAction>();
 
   constructor(
@@ -816,7 +818,7 @@ export class AiService {
         // Trả về đúng kết quả AI quyết định (kể cả rỗng)
         return Array.isArray(filteredProducts) ? filteredProducts : [];
       } catch (err) {
-        console.warn('Error filtering products by AI:', err);
+        this.logger.warn('Error filtering products by AI', err);
         // Khi AI lỗi, không trả về text-based fallback
         return [];
       }
@@ -937,7 +939,7 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
         })
         .filter(Boolean);
     } catch (e) {
-      console.warn('Error parsing filtered products:', e);
+      this.logger.warn('Error parsing filtered products', e);
       return [];
     }
   }

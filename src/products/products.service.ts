@@ -10,6 +10,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { EventsGateway } from '../events/events.gateway';
+import { stripDocument } from '../common/utils/strip-doc.util';
 
 @Injectable()
 export class ProductsService implements OnModuleInit {
@@ -48,7 +49,7 @@ export class ProductsService implements OnModuleInit {
           if (productId) {
             const doc = await this.productModel.findById(productId).lean();
             if (doc) {
-              this.eventsGateway.emitProductUpdated(this.strip(doc));
+              this.eventsGateway.emitProductUpdated(stripDocument(doc));
             }
           }
         }
@@ -76,7 +77,7 @@ export class ProductsService implements OnModuleInit {
       payload.images = this.cleanImages(payload.images);
     }
     const created = await this.productModel.create(payload);
-    return this.strip(created.toObject());
+    return stripDocument(created.toObject());
   }
 
   async findAll() {
@@ -87,7 +88,7 @@ export class ProductsService implements OnModuleInit {
       ])
       .exec();
 
-    return docs.map(this.strip);
+    return docs.map(stripDocument);
   }
 
   async findOne(id: string) {
@@ -101,18 +102,17 @@ export class ProductsService implements OnModuleInit {
 
     const doc = docs[0];
     if (!doc) throw new NotFoundException('Product not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async findRelated(id: string) {
     const product = await this.productModel.findById(id).lean();
-    if (!product) throw new NotFoundException('Product not found');
 
     const pipeline: any[] = [
       { $match: { _id: { $ne: new Types.ObjectId(id) } } },
     ];
 
-    if (product.category) {
+    if (product?.category) {
       pipeline.push({ $match: { category: product.category } });
     }
 
@@ -134,7 +134,20 @@ export class ProductsService implements OnModuleInit {
       docs = [...docs, ...more];
     }
 
-    return docs.map(this.strip);
+    // If still empty (e.g., product not found or no others), fall back to latest products
+    if (!docs.length) {
+      docs = await this.productModel
+        .aggregate([
+          { $match: { _id: { $ne: new Types.ObjectId(id) } } },
+          { $sort: { createdAt: -1 } },
+          { $limit: 6 },
+          ...this.buildReviewStatsPipeline(),
+          { $project: { reviewStats: 0 } },
+        ])
+        .exec();
+    }
+
+    return docs.map(stripDocument);
   }
 
   async update(id: string, data: UpdateProductDto) {
@@ -148,21 +161,16 @@ export class ProductsService implements OnModuleInit {
     if (!doc) throw new NotFoundException('Product not found');
 
     // Emit event when product is updated
-    this.eventsGateway.emitProductUpdated(this.strip(doc));
+    this.eventsGateway.emitProductUpdated(stripDocument(doc));
 
-    return this.strip(doc);
+    return stripDocument(doc);
   }
 
   async remove(id: string) {
     const doc = await this.productModel.findByIdAndDelete(id).lean();
     if (!doc) throw new NotFoundException('Product not found');
-    return this.strip(doc);
+    return stripDocument(doc);
   }
-
-  private strip = (doc: Partial<Product>) => {
-    const { __v, ...rest } = doc as Partial<Product & { __v?: number }>;
-    return rest;
-  };
 
   private buildReviewStatsPipeline() {
     return [
