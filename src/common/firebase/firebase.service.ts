@@ -10,47 +10,76 @@ export class FirebaseService implements OnModuleInit {
 
   onModuleInit() {
     try {
-      // Look for serviceAccountKey.json in root or config folder
-      const keyPath = path.resolve(process.cwd(), 'serviceAccountKey.json');
-
-      if (fs.existsSync(keyPath)) {
-        const serviceAccount = require(keyPath);
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount),
-        });
-        this.initialized = true;
-        this.logger.log('Firebase Admin SDK initialized successfully');
-      } else {
+      const serviceAccount = this.loadServiceAccountKey();
+      if (!serviceAccount) {
         this.logger.warn(
-          'serviceAccountKey.json not found. Push notifications will be disabled.',
+          'serviceAccountKey.json not found (checked CWD and dist-root). Push notifications will be disabled.',
         );
+        return;
       }
+
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+      });
+      this.initialized = true;
+      this.logger.log('Firebase Admin SDK initialized successfully');
     } catch (error) {
       this.logger.error('Failed to initialize Firebase Admin SDK', error);
     }
+  }
+
+  /**
+   * Locate the service account key in common locations so prod build (dist) still works.
+   */
+  private loadServiceAccountKey(): admin.ServiceAccount | null {
+    const candidates = [
+      process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
+      path.resolve(process.cwd(), 'serviceAccountKey.json'),
+      path.resolve(__dirname, '../../serviceAccountKey.json'),
+      path.resolve(__dirname, '../../../serviceAccountKey.json'),
+    ].filter(Boolean) as string[];
+
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) {
+          this.logger.log(`Using Firebase service account from: ${candidate}`);
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          return require(candidate);
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to read Firebase key at ${candidate}: ${err}`);
+      }
+    }
+    return null;
   }
 
   async sendToDevice(
     tokens: string[],
     title: string,
     body: string,
-    data?: Record<string, string>,
+    data?: Record<string, unknown>,
   ) {
     if (!this.initialized || !tokens.length) return;
 
     try {
+      const dataPayload: Record<string, string> = {};
+      Object.entries(data || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null) return;
+        dataPayload[key] = String(value);
+      });
+
       const message: admin.messaging.MulticastMessage = {
         tokens,
         notification: {
           title,
           body,
         },
-        data: data || {},
+        data: dataPayload,
         android: {
           priority: 'high',
           notification: {
             sound: 'default',
-            channelId: 'default',
+            channelId: 'high-priority',
           },
         },
         apns: {
