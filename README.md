@@ -1,145 +1,227 @@
-# electronics-backend
+## electronics-backend – Backend NestJS cho Electronics Shop
 
-Backend NestJS cho cửa hàng linh kiện điện tử. Kết nối MongoDB, tổ chức theo module rõ ràng cho từng collection.
+`electronics-backend` là **backend REST API** dùng NestJS + MongoDB cho hệ thống cửa hàng linh kiện điện tử:
 
-## Kiến trúc thư mục
-- `src/app.module.ts`: Root module, nạp config và Mongo.
-- `src/main.ts`: Bootstrap + ValidationPipe.
-- `src/auth`, `src/users`, `src/products`, `src/orders`, `src/carts`, `src/vouchers`, `src/reviews`, `src/transactions`, `src/shipments`, `src/inventory-movements`, `src/chat`, `src/ai`, `src/health`: Module đặc thù.
-- `src/common`: Chia sẵn decorators/guards/pipes.
-- `src/config`: Đặt cấu hình mở rộng (nếu thêm).
+- Cung cấp API cho **ứng dụng mobile `ElectronicsShop`** và **web admin `electronics-admin`**.
+- Xử lý **auth, giỏ hàng, đơn hàng, thanh toán, giao vận, tồn kho, thông báo, chat, AI, FCM, Socket.IO**.
 
-## Cấu hình môi trường
-App dùng `@nestjs/config` + Joi validate. Tạo `.env` (hoặc export) với các biến bắt buộc:
-```
+---
+
+## 1. Kiến trúc thư mục
+
+- `src/app.module.ts`: Root module, cấu hình MongoDB, nạp các module con.
+- `src/main.ts`: Bootstrap ứng dụng Nest, bật `ValidationPipe`, `helmet`, CORS, throttler.
+- Các module chính:
+  - `src/auth`: Auth, JWT, refresh token, OTP qua email, đổi mật khẩu, reset mật khẩu.
+  - `src/users`: User, hồ sơ, địa chỉ giao hàng, phân quyền `role`.
+  - `src/products`: Sản phẩm, thông số kỹ thuật, hình ảnh, tồn kho cơ bản.
+  - `src/carts`: Giỏ hàng theo user.
+  - `src/orders`: Đơn hàng, trạng thái, tổng tiền.
+  - `src/vouchers`: Mã giảm giá, điều kiện áp dụng.
+  - `src/reviews`: Đánh giá sản phẩm, rating, comment, hình ảnh.
+  - `src/transactions`: Giao dịch thanh toán.
+  - `src/shipments`: Vận chuyển, tracking, lịch sử trạng thái.
+  - `src/inventory-movements`: Nhập/xuất kho.
+  - `src/chat`: Phiên chat, lịch sử tin nhắn với AI.
+  - `src/ai`: Tầng tích hợp AI (Gemini API) cho chat/scan sơ đồ mạch.
+  - `src/notifications`: Thông báo, trạng thái người dùng đã đọc/chưa đọc.
+  - `src/events`: Socket.IO gateway + lắng nghe thay đổi DB.
+  - `src/upload`: Upload file/hình ảnh (Cloudinary).
+  - `src/health`: Health check (`GET /health`).
+- `src/common`: 
+  - Decorators, guards, pipes, helpers được dùng chung.
+- `src/config`: 
+  - Tài liệu hướng dẫn cấu hình, có thể mở rộng thêm module config riêng.
+
+---
+
+## 2. Cấu hình môi trường (`.env`)
+
+App dùng `@nestjs/config` + Joi để validate cấu hình. Tạo `electronics-backend/.env` với các biến tối thiểu:
+
+```bash
 MONGO_URI=mongodb://<user>:<pass>@localhost:27017/electronics_shop?authSource=admin
 JWT_SECRET=<random-32+ chars>       # ký access token 30 phút
 REFRESH_SECRET=<random-32+ chars>   # ký refresh token 30 ngày, khác với JWT_SECRET
 PORT=3000
-CORS_ORIGINS=http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500   # danh sách origin, phân tách dấu phẩy
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:19006
+
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=<smtp-username>
 SMTP_PASS=<smtp-password-or-app-password>
 SMTP_FROM="Electronics Shop <no-reply@yourdomain.com>"
-SMTP_SECURE=false                    # true nếu dùng cổng 465
-OTP_TTL_SECONDS=600                  # mặc định 10 phút
-OTP_MAX_ATTEMPTS=5                   # khóa OTP nếu nhập sai quá số lần này
+SMTP_SECURE=false
+
+OTP_TTL_SECONDS=600
+OTP_MAX_ATTEMPTS=5
 ```
-Không commit `.env`. Secrets cần đủ dài/ngẫu nhiên; có thể tạo bằng `openssl rand -hex 32`.
 
-### Đăng nhập
-- Đăng nhập dùng mật khẩu bình thường (OTP không áp dụng cho login).
+Không commit `.env`. Secrets cần đủ dài/ngẫu nhiên; có thể tạo bằng:
 
-### Luồng đăng ký với OTP (chỉ tạo user khi đã xác minh)
-- Gửi OTP đăng ký: `POST /auth/register/send-otp` body `{"email":"<email>","password":"<password>","name":"<optional>"}` — chỉ lưu tạm hash mật khẩu trong collection otp_codes, chưa tạo user.
-- Xác minh OTP đăng ký: `POST /auth/register/verify-otp` body `{"email":"<email>","code":"123456"}` — tạo user và trả `{ user, accessToken, refreshToken }`.
-
-## Bảo mật đã bật
-- Bắt buộc thiết lập `MONGO_URI` và `JWT_SECRET` qua biến môi trường; thiếu sẽ không khởi động.
-- HTTP hardening: `helmet`, CORS (origin động, cho phép credentials), giới hạn tốc độ 100 request/phút qua `@nestjs/throttler`.
-- ValidationPipe bật `whitelist`, `forbidNonWhitelisted`, chuyển đổi kiểu; mật khẩu tối thiểu 8 ký tự; đăng ký không nhận trường `role`.
-- Auth: JWT guard + Roles guard; login trả về user đã được ẩn `passwordHashed`; JWT validate kiểm tra user còn tồn tại.
-- Phân quyền/ownership: users/products/vouchers/transactions/inventory-movements/shipments và thao tác cập nhật/xóa review yêu cầu `admin`; carts/orders/chat chỉ truy cập dữ liệu của chính user (admin bỏ qua kiểm tra).
-- Auth: Access token TTL 30 phút; refresh token TTL 30 ngày. Endpoint làm mới token: `POST /auth/refresh` (body: `{ "refreshToken": "<token>" }`). Login/register trả về `{ user, accessToken, refreshToken }`.
-- Review ràng buộc user: `userId` lấy từ JWT, không cho client tự đính kèm tên/ảnh.
-
-## Cài đặt & chạy
 ```bash
-npm install
-npm run start:dev   # hot reload
-# hoặc
-npm run start       # chạy thường
+openssl rand -hex 32
 ```
 
-## API hiện có (REST)
+### 2.1. Biến môi trường mở rộng (tích hợp bên thứ ba)
+
+Tuỳ theo mức độ sử dụng, có thể thêm:
+
+```bash
+# Firebase / FCM
+FIREBASE_PROJECT_ID=<project-id>
+FIREBASE_CLIENT_EMAIL=<service-account-email>
+FIREBASE_PRIVATE_KEY=<service-account-private-key>
+
+# Cloudinary (upload ảnh)
+CLOUDINARY_CLOUD_NAME=<cloud-name>
+CLOUDINARY_API_KEY=<api-key>
+CLOUDINARY_API_SECRET=<api-secret>
+
+# Payment (ví dụ VNPay)
+VNPAY_TMN_CODE=<vnpay-tmn-code>
+VNPAY_HASH_SECRET=<vnpay-hash-secret>
+VNPAY_RETURN_URL=http://localhost:3000/payments/return
+
+# Gemini API cho AI
+GEMINI_API_KEY=<gemini-api-key>
+```
+
+---
+
+## 3. Auth & bảo mật
+
+- **Login**:
+  - Đăng nhập dùng email + password (OTP không áp dụng cho login).
+  - Trả về `{ user, accessToken, refreshToken }`.
+- **Đăng ký**:
+  - Đăng ký thẳng: `POST /auth/register` (public).
+  - Đăng ký qua OTP:
+    - `POST /auth/register/send-otp` — lưu tạm thông tin + gửi OTP, chưa tạo user.
+    - `POST /auth/register/verify-otp` — xác minh OTP, tạo user và trả token.
+- **JWT & Guard**:
+  - Dùng access token TTL ~30 phút, refresh token ~30 ngày.
+  - Endpoint refresh: `POST /auth/refresh` (body `{ refreshToken }`).
+  - JWT guard + Roles guard bật global, chỉ `/health` và `/auth/*` là public.
+- **Validation & Hardening**:
+  - `ValidationPipe` bật `whitelist`, `forbidNonWhitelisted`, transform type.
+  - Mật khẩu tối thiểu 8 ký tự; client không thể gửi trường `role` tuỳ tiện khi đăng ký (được kiểm soát server-side).
+  - Bật `helmet`, CORS với danh sách origin từ `CORS_ORIGINS`.
+  - Throttler giới hạn request / IP (ví dụ 100 req/phút).
+
+---
+
+## 4. Cài đặt & chạy
+
+```bash
+cd electronics-backend
+
+# Cài dependencies
+npm install
+
+# Chạy dev với hot reload
+npm run start:dev
+
+# Hoặc build + chạy production
+npm run build
+npm run start:prod
+```
+
+Mặc định server chạy tại `http://localhost:3000`.
+
+---
+
+## 5. Các nhóm API chính (REST)
+
 Base URL: `http://localhost:${PORT:-3000}`
 
 - **Health**
   - `GET /health`
 
 - **Auth**
-  - Đăng ký thẳng: `POST /auth/register` (public) — name, email, password, avatar?, role?, address?
-  - Đăng ký qua OTP (chỉ tạo user khi đã xác minh):
-    - `POST /auth/register/send-otp` — email, password, name? → gửi OTP đăng ký (chưa tạo user)
-    - `POST /auth/register/verify-otp` — email, code → tạo user + trả token
-  - Đăng nhập thẳng: `POST /auth/login` (public) — email, password → `{ accessToken, user }`
-  - Với các API còn lại: gửi header `Authorization: Bearer <accessToken>`
+  - `POST /auth/register`
+  - `POST /auth/register/send-otp`
+  - `POST /auth/register/verify-otp`
+  - `POST /auth/login`
+  - `POST /auth/refresh`
 
 - **Users**
-  - `POST /users` tạo user (name, email, password, avatar?, role?, address[]); server sẽ hash
-  - `GET /users` danh sách (ẩn passwordHashed)
-  - `GET /users/:id` chi tiết
-  - `PATCH /users/:id` cập nhật
-  - `DELETE /users/:id` xóa
-  - `POST /users/:id/address` thêm địa chỉ
-  - `PATCH /users/:id/address/:index/default` đặt địa chỉ mặc định
+  - `POST /users`
+  - `GET /users`
+  - `GET /users/:id`
+  - `PATCH /users/:id`
+  - `DELETE /users/:id`
+  - `POST /users/:id/address`
+  - `PATCH /users/:id/address/:index/default`
 
 - **Products**
-  - `POST /products` (name, price{originalPrice,salePrice}, category?, description?, images?, specs?, stock?, code?, datasheet?)
+  - `POST /products`
   - `GET /products`
   - `GET /products/:id`
   - `PATCH /products/:id`
   - `DELETE /products/:id`
 
 - **Vouchers**
-  - `POST /vouchers` (code, description?, discountPrice, minTotal, expire)
+  - `POST /vouchers`
   - `GET /vouchers`
   - `GET /vouchers/:id`
   - `PATCH /vouchers/:id`
   - `DELETE /vouchers/:id`
 
 - **Carts**
-  - `POST /carts` (userId, items[{productId,quantity,price,name?,category?,image?}], voucher?, totals?)
+  - `POST /carts`
   - `GET /carts`
   - `GET /carts/:id`
   - `PATCH /carts/:id`
   - `DELETE /carts/:id`
 
 - **Orders**
-  - `POST /orders` (code, userId, status dates?, isCancelled?, shippingAddress?, items[{productId,name,quantity,price,subTotal,shippingFee?,discount?,totalPrice}], voucher?, subTotal, shippingFee, discount, totalPrice, payment?, paymentStatus?)
+  - `POST /orders`
   - `GET /orders`
   - `GET /orders/:id`
   - `PATCH /orders/:id`
   - `DELETE /orders/:id`
 
 - **Reviews**
-  - `POST /reviews` (productId, rating, comment?, images?, user{avatar?,name?}?)
+  - `POST /reviews`
   - `GET /reviews`
   - `GET /reviews/:id`
   - `PATCH /reviews/:id`
   - `DELETE /reviews/:id`
 
 - **Transactions**
-  - `POST /transactions` (orderId, userId, provider, amount, currency, status, paidAt?)
+  - `POST /transactions`
   - `GET /transactions`
   - `GET /transactions/:id`
   - `PATCH /transactions/:id`
   - `DELETE /transactions/:id`
 
 - **Shipments**
-  - `POST /shipments` (orderId, carrier, trackingNumber, status, statusHistory?, expectedDelivery?)
+  - `POST /shipments`
   - `GET /shipments`
   - `GET /shipments/:id`
   - `PATCH /shipments/:id`
   - `DELETE /shipments/:id`
 
 - **Inventory movements**
-  - `POST /inventory-movements` (productId, type[inbound|outbound], quantity, note?)
+  - `POST /inventory-movements`
   - `GET /inventory-movements`
   - `GET /inventory-movements/:id`
   - `PATCH /inventory-movements/:id`
   - `DELETE /inventory-movements/:id`
 
 - **Chat session**
-  - `POST /chat` (userId, messages[{role,time?,content{text?,images[]?}}]?)
+  - `POST /chat`
   - `GET /chat`
   - `GET /chat/:id`
   - `PATCH /chat/:id`
-  - `POST /chat/:id/messages` thêm tin nhắn
+  - `POST /chat/:id/messages`
   - `DELETE /chat/:id`
 
-## Test nhanh (curl)
+---
+
+## 6. Test nhanh (curl)
+
 ```bash
 # 1) Đăng ký (public)
 curl -X POST http://localhost:3000/auth/register \
@@ -156,7 +238,10 @@ curl http://localhost:3000/users \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-## Ghi chú phát triển tiếp
-- JWT Guard đã bật global, chỉ `/health` và `/auth/*` là public. Cân nhắc phân quyền role (admin/customer) và kiểm tra quyền sở hữu tài nguyên.
-- Bổ sung enum/ràng buộc nghiệp vụ (status, type) và validate foreign key khi cần.
-- Thêm test cho auth và các module.
+---
+
+## 7. Ghi chú phát triển tiếp
+
+- JWT Guard đã bật global, chỉ `/health` và `/auth/*` là public → nên cân nhắc decor `@Public()` thêm cho một số endpoint nếu cần mở.
+- Cần hoàn thiện thêm enum/ràng buộc nghiệp vụ (status, type) và validate foreign key giữa các collection.
+- Nên bổ sung thêm test unit/e2e cho `auth`, `orders`, `payments`, `inventory-movements` để đảm bảo logic nghiệp vụ.
