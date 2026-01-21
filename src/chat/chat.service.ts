@@ -22,7 +22,7 @@ export class ChatService {
   constructor(
     @InjectModel(ChatSession.name)
     private readonly chatModel: Model<ChatSessionDocument>,
-  ) {}
+  ) { }
 
   async create(data: CreateChatSessionDto, user: JwtPayload) {
     const created = await this.chatModel.create({
@@ -78,14 +78,19 @@ export class ChatService {
     return stripDocument(doc);
   }
 
-  private mapMessage = (msg: ChatMessageDto) => ({
-    ...msg,
-    time: msg.time ? new Date(msg.time) : undefined,
-    content: {
-      text: msg.content?.text,
-      images: msg.content?.images ?? [],
-    },
-  });
+  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+  private mapMessage(msg: ChatMessageDto) {
+    return {
+      role: msg.role,
+      roleName: msg.roleName,
+      content: msg.content,
+      type: msg.type,
+      timestamp: msg.timestamp || new Date(),
+      metadata: msg.metadata,
+      cards: msg.cards,
+      actions: msg.actions,
+    };
+  }
 
   private ensureOwnerOrAdmin(
     ownerId: Types.ObjectId | undefined,

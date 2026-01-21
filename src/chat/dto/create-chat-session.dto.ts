@@ -7,28 +7,34 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class MessageContentDto {
-  @IsOptional()
-  @IsString()
-  text?: string;
 
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  images?: string[];
-}
 
 export class ChatMessageDto {
   @IsString()
   role: string;
 
   @IsOptional()
-  @IsDateString()
-  time?: string;
+  @IsString()
+  roleName?: string;
 
-  @ValidateNested()
-  @Type(() => MessageContentDto)
-  content: MessageContentDto;
+  @IsString()
+  content: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  timestamp?: Date;
+
+  @IsOptional()
+  metadata?: any;
+
+  @IsOptional()
+  cards?: any[];
+
+  @IsOptional()
+  actions?: any[];
 }
 
 export class CreateChatSessionDto {
