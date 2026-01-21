@@ -12,6 +12,7 @@ import { AddressDto } from './dto/address.dto';
 import { User, UserDocument } from './schemas/user.schema';
 import { CreateVoucherDto } from '../vouchers/dto/create-voucher.dto';
 import { Product } from '../products/schemas/product.schema';
+import { SearchTrendsService } from '../search-trends/search-trends.service';
 
 @Injectable()
 export class UsersService {
@@ -20,6 +21,7 @@ export class UsersService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<Product>,
+    private readonly searchTrendsService: SearchTrendsService,
   ) { }
 
   async addVoucher(id: string, voucherData: CreateVoucherDto) {
@@ -261,6 +263,23 @@ export class UsersService {
       user.searchHistory = [];
     }
 
+    // Tìm các query mới (chưa có trong history cũ) để cập nhật search trends
+    const existingQueries = new Set(
+      user.searchHistory.map(q => q.toLowerCase().trim())
+    );
+    const newQueries = limitedQueries.filter(
+      q => !existingQueries.has(q.toLowerCase().trim())
+    );
+
+    // Increment search trends cho các query mới
+    for (const query of newQueries) {
+      try {
+        await this.searchTrendsService.incrementSearch(query);
+      } catch (error) {
+        console.warn('Failed to increment search trend:', error);
+      }
+    }
+
     user.searchHistory = limitedQueries;
     await user.save();
 
@@ -300,7 +319,21 @@ export class UsersService {
       return this.popularSearchesCache;
     }
 
-    // Aggregation pipeline to count occurrences of each search term
+    try {
+      // Primary: Sử dụng SearchTrendsService để lấy top trends từ collection search_trends
+      const trendsFromService = await this.searchTrendsService.getTopTrends(10);
+
+      if (trendsFromService && trendsFromService.length > 0) {
+        // Update cache
+        this.popularSearchesCache = trendsFromService;
+        this.lastCacheTime = now;
+        return this.popularSearchesCache;
+      }
+    } catch (error) {
+      console.warn('Failed to get trends from SearchTrendsService, falling back to aggregation:', error);
+    }
+
+    // Fallback: Aggregation pipeline từ user searchHistory
     const result = await this.userModel.aggregate([
       // 1. Unwind the searchHistory array (creates a document for each query)
       { $unwind: '$searchHistory' },
