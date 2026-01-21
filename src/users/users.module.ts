@@ -5,6 +5,7 @@ import { UsersService } from './users.service';
 import { User, UserSchema } from './schemas/user.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { CloudinaryModule } from '../cloudinary/cloudinary.module';
+import { SearchTrendsModule } from '../search-trends/search-trends.module';
 
 @Module({
   imports: [
@@ -13,9 +14,10 @@ import { CloudinaryModule } from '../cloudinary/cloudinary.module';
       { name: Product.name, schema: ProductSchema },
     ]),
     CloudinaryModule,
+    SearchTrendsModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],
 })
-export class UsersModule {}
+export class UsersModule { }

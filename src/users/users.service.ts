@@ -20,7 +20,7 @@ export class UsersService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<Product>,
-  ) {}
+  ) { }
 
   async addVoucher(id: string, voucherData: CreateVoucherDto) {
     const user = await this.userModel.findById(id);
@@ -285,6 +285,50 @@ export class UsersService {
     await user.save();
 
     return { success: true };
+  }
+
+  // Simple in-memory cache for popular searches
+  private popularSearchesCache: string[] | null = null;
+  private lastCacheTime = 0;
+  private readonly CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+  async getPopularSearches() {
+    const now = Date.now();
+
+    // Return cached result if valid
+    if (this.popularSearchesCache && (now - this.lastCacheTime < this.CACHE_TTL)) {
+      return this.popularSearchesCache;
+    }
+
+    // Aggregation pipeline to count occurrences of each search term
+    const result = await this.userModel.aggregate([
+      // 1. Unwind the searchHistory array (creates a document for each query)
+      { $unwind: '$searchHistory' },
+      // 2. Normalize text (lowercase, optional trimming) for better grouping
+      {
+        $project: {
+          query: { $toLower: '$searchHistory' },
+        },
+      },
+      // 3. Group by query and count
+      {
+        $group: {
+          _id: '$query',
+          count: { $sum: 1 },
+        },
+      },
+      // 4. Sort by count descending
+      { $sort: { count: -1 } },
+      // 5. Limit to top 10
+      { $limit: 10 },
+    ]);
+
+    // Update cache
+    this.popularSearchesCache = result.map((item) => item._id);
+    this.lastCacheTime = now;
+
+    // Return just the array of strings
+    return this.popularSearchesCache;
   }
 
   private toSafeUser = (user: Partial<User>) => {

@@ -25,6 +25,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { UploadModule } from './upload/upload.module';
 import { BannersModule } from './banners/banners.module';
 import { FirebaseModule } from './common/firebase/firebase.module';
+import { SearchTrendsModule } from './search-trends/search-trends.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { FirebaseModule } from './common/firebase/firebase.module';
     UploadModule,
     BannersModule,
     FirebaseModule,
+    SearchTrendsModule,
   ],
   providers: [
     {
@@ -110,4 +112,4 @@ import { FirebaseModule } from './common/firebase/firebase.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

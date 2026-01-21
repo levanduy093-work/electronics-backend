@@ -8,10 +8,12 @@ import {
   Post,
   UseGuards,
   UseInterceptors,
+
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
@@ -29,7 +31,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly cloudinaryService: CloudinaryService,
-  ) {}
+  ) { }
 
   @Roles('admin')
   @Post(':id/vouchers')
@@ -138,6 +140,12 @@ export class UsersController {
   @Delete('me/search-history')
   clearMySearchHistory(@CurrentUser() user: JwtPayload) {
     return this.usersService.clearSearchHistory(user.sub);
+  }
+
+  @Get('popular-searches')
+  @Public() // Allow public access for trends
+  getPopularSearches() {
+    return this.usersService.getPopularSearches();
   }
 
   // Admin endpoints
