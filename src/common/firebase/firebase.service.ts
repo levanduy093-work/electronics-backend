@@ -19,7 +19,7 @@ export class FirebaseService implements OnModuleInit {
       }
 
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+        credential: admin.credential.cert(serviceAccount),
       });
       this.initialized = true;
       this.logger.log('Firebase Admin SDK initialized successfully');
@@ -43,8 +43,8 @@ export class FirebaseService implements OnModuleInit {
       try {
         if (fs.existsSync(candidate)) {
           this.logger.log(`Using Firebase service account from: ${candidate}`);
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          return require(candidate);
+
+          return JSON.parse(fs.readFileSync(candidate, 'utf-8'));
         }
       } catch (err) {
         this.logger.warn(`Failed to read Firebase key at ${candidate}: ${err}`);
@@ -65,7 +65,11 @@ export class FirebaseService implements OnModuleInit {
       const dataPayload: Record<string, string> = {};
       Object.entries(data || {}).forEach(([key, value]) => {
         if (value === undefined || value === null) return;
-        dataPayload[key] = String(value);
+        if (typeof value === 'object' && value !== null) {
+          dataPayload[key] = JSON.stringify(value);
+        } else {
+          dataPayload[key] = String(value as any);
+        }
       });
 
       const message: admin.messaging.MulticastMessage = {
@@ -95,14 +99,14 @@ export class FirebaseService implements OnModuleInit {
       if (response.failureCount > 0) {
         const failedTokens: string[] = [];
         const errorCounts: Record<string, number> = {};
-        
+
         response.responses.forEach((resp, idx) => {
           if (!resp.success) {
             failedTokens.push(tokens[idx]);
             const errorCode = resp.error?.code || 'unknown';
             const errorMessage = resp.error?.message || 'Unknown error';
             errorCounts[errorCode] = (errorCounts[errorCode] || 0) + 1;
-            
+
             // Only log first few failures to avoid log spam
             if (failedTokens.length <= 3) {
               this.logger.debug(
@@ -111,20 +115,20 @@ export class FirebaseService implements OnModuleInit {
             }
           }
         });
-        
+
         // Summarize errors
         const errorSummary = Object.entries(errorCounts)
           .map(([code, count]) => `${code} (${count}x)`)
           .join(', ');
-        
+
         this.logger.warn(
           `Failed to send ${response.failureCount} out of ${tokens.length} messages. Errors: ${errorSummary}. ${failedTokens.length === tokens.length ? 'All tokens appear to be invalid. This is normal if using test/placeholder tokens.' : 'Some tokens may be invalid and should be cleaned up from user database.'}`,
         );
-        
+
         // Note: Invalid tokens should be cleaned up from user database
         // Common error codes indicating invalid tokens:
         // - 'messaging/invalid-registration-token'
-        // - 'messaging/registration-token-not-registered' 
+        // - 'messaging/registration-token-not-registered'
         // - 'messaging/invalid-argument' (when token doesn't exist in Firebase)
       } else {
         this.logger.log(`Successfully sent ${response.successCount} messages`);

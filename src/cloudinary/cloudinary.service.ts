@@ -38,7 +38,7 @@ export class CloudinaryService {
           format,
         },
         (error, result) => {
-          if (error) return reject(error);
+          if (error) return reject(new Error(error.message));
           if (!result)
             return reject(
               new Error('Upload to Cloudinary failed - No result returned'),

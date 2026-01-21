@@ -380,7 +380,9 @@ export class OrdersService {
         }
 
         updatedItems.push({ productId, quantity: item.quantity });
-        this.logger.log(`Stock updated successfully for: ${productId.toString()}`);
+        this.logger.log(
+          `Stock updated successfully for: ${productId.toString()}`,
+        );
       }
     } catch (error) {
       this.logger.error('Error during stock deduction', error?.message);

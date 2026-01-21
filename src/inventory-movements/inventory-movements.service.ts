@@ -103,7 +103,13 @@ export class InventoryMovementsService {
     return this.normalizeDocument(stripDocument(removed));
   }
 
-  private normalizeDocument(doc: Partial<InventoryMovement> & { _id?: Types.ObjectId | string; createdAt?: Date | string; updatedAt?: Date | string }) {
+  private normalizeDocument(
+    doc: Partial<InventoryMovement> & {
+      _id?: Types.ObjectId | string;
+      createdAt?: Date | string;
+      updatedAt?: Date | string;
+    },
+  ) {
     const stringifyId = (value?: Types.ObjectId | string) =>
       value && typeof value !== 'string' && 'toString' in value
         ? value.toString()
@@ -114,7 +120,9 @@ export class InventoryMovementsService {
     return {
       ...doc,
       _id: stringifyId(doc._id),
-      productId: stringifyId(doc.productId as Types.ObjectId | string | undefined),
+      productId: stringifyId(
+        doc.productId as Types.ObjectId | string | undefined,
+      ),
       createdAt: normalizeDate(doc.createdAt),
       updatedAt: normalizeDate(doc.updatedAt),
     };

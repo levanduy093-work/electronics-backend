@@ -339,7 +339,7 @@ export class AiService {
         })
         .slice(0, 5);
       const orderLines = latest.map((o) => {
-        const code = o?.code || String(o?._id || '');
+        const code = o?.code || (o?._id ? String(o._id as any) : '');
         const cancelled = o?.isCancelled ? ' (ĐÃ HỦY)' : '';
         const total =
           typeof o?.totalPrice === 'number' ? `${o.totalPrice} VND` : 'N/A';

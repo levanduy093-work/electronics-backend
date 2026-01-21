@@ -19,7 +19,7 @@ export class DbChangeListener implements OnModuleInit, OnModuleDestroy {
     private readonly eventsGateway: EventsGateway,
   ) {}
 
-  async onModuleInit() {
+  onModuleInit() {
     try {
       // Lắng nghe mọi thay đổi trên toàn bộ database (insert/update/delete/replace)
       this.changeStream = this.connection.watch([], {

@@ -1,0 +1,73 @@
+
+> electronics-backend@0.0.1 lint
+> eslint "{src,apps,libs,test}/**/*.ts" --fix
+
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/ai/ai.service.ts
+  342:50  error  'o._id' will use Object's default stringification format ('[object Object]') when stringified  @typescript-eslint/no-base-to-string
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/auth/auth.service.ts
+   47:36  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+   61:36  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+   72:36  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+  118:36  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/carts/carts.service.ts
+  79:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, Cart, {}, DefaultSchemaOptions> & Cart & { _id: ObjectId; } & { __v: number; } & { id: string; }>`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/chat/chat.service.ts
+  58:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, ChatSession, {}, DefaultSchemaOptions> & ChatSession & { _id: ObjectId; } & { __v: number; } & { ...; }>`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/common/firebase/firebase.service.ts
+  71:37  error  'value' will use Object's default stringification format ('[object Object]') when stringified  @typescript-eslint/no-base-to-string
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/inventory-movements/inventory-movements.service.ts
+  79:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, InventoryMovement, {}, DefaultSchemaOptions> & InventoryMovement & { _id: ObjectId; } & { ...; } & { ...; }>`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/main.ts
+  37:1  warning  Promises must be awaited, end with a call to .catch, end with a call to .then with a rejection handler or be explicitly marked as ignored with the `void` operator  @typescript-eslint/no-floating-promises
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/notifications/notifications.service.ts
+  333:13  warning  Unsafe argument of type `any` assigned to a parameter of type `Record<string, unknown> | undefined`  @typescript-eslint/no-unsafe-argument
+  397:9   warning  Unsafe argument of type `any` assigned to a parameter of type `Record<string, unknown> | undefined`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/orders/orders.service.ts
+   54:39  warning  Unsafe argument of type `any` assigned to a parameter of type `any[]`                                                                                                                                                                                                                                            @typescript-eslint/no-unsafe-argument
+   57:56  warning  Unsafe argument of type `any[]` assigned to a parameter of type `{ _id?: ObjectIdQueryTypeCasting | undefined; $assertPopulated?: (<Paths = {}>(path: string | string[], values?: Partial<Paths> | undefined) => Omit<...> & Paths) | undefined; ... 69 more ...; id?: StringQueryTypeCasting | undefined; }[]`  @typescript-eslint/no-unsafe-argument
+   75:37  warning  Unsafe argument of type `any` assigned to a parameter of type `any[]`                                                                                                                                                                                                                                            @typescript-eslint/no-unsafe-argument
+   76:52  warning  Unsafe argument of type `any` assigned to a parameter of type `Partial<Document<unknown, {}, Order, {}, DefaultSchemaOptions> & Order & { _id: ObjectId; } & { __v: number; } & { id: string; }>`                                                                                                                @typescript-eslint/no-unsafe-argument
+  126:56  warning  Unsafe argument of type `any` assigned to a parameter of type `string | number | Date`                                                                                                                                                                                                                           @typescript-eslint/no-unsafe-argument
+  134:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, Order, {}, DefaultSchemaOptions> & Order & { _id: ObjectId; } & { __v: number; } & { id: string; }>`                                                                                                            @typescript-eslint/no-unsafe-argument
+  274:46  warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                                                                                                                                                                                                                           @typescript-eslint/no-unsafe-argument
+  307:72  warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                                                                                                                                                                                                                           @typescript-eslint/no-unsafe-argument
+  344:34  warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                                                                                                                                                                                                                           @typescript-eslint/no-unsafe-argument
+  422:34  warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                                                                                                                                                                                                                           @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/payments/payments.service.ts
+  266:46  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+  275:37  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+  276:50  warning  Unsafe argument of type `any` assigned to a parameter of type `string`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/products/products.service.ts
+   38:15  warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                             @typescript-eslint/no-unsafe-argument
+  109:26  warning  Unsafe argument of type `any` assigned to a parameter of type `Partial<{ __v?: number | undefined; _id?: any; }>`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/reviews/reviews.service.ts
+   73:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, Review, {}, DefaultSchemaOptions> & Review & { _id: ObjectId; } & { __v: number; } & { id: string; }>`  @typescript-eslint/no-unsafe-argument
+   77:7   warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                                                                                                                   @typescript-eslint/no-unsafe-argument
+  134:25  warning  Unsafe argument of type `any` assigned to a parameter of type `string`                                                                                                                                   @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/shipments/shipments.service.ts
+   30:53  warning  Unsafe argument of type `any` assigned to a parameter of type `Partial<Document<unknown, {}, Shipment, {}, DefaultSchemaOptions> & Shipment & { _id: ObjectId; } & { __v: number; } & { id: string; }>`      @typescript-eslint/no-unsafe-argument
+   75:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, Shipment, {}, DefaultSchemaOptions> & Shipment & { _id: ObjectId; } & { __v: number; } & { id: string; }>`  @typescript-eslint/no-unsafe-argument
+   82:7   warning  Unsafe argument of type `any` assigned to a parameter of type `string | undefined`                                                                                                                           @typescript-eslint/no-unsafe-argument
+  129:18  warning  Unsafe argument of type `any` assigned to a parameter of type `string | number | Date`                                                                                                                       @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/transactions/transactions.service.ts
+  47:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, Transaction, {}, DefaultSchemaOptions> & Transaction & { _id: ObjectId; } & { __v: number; } & { ...; }>`  @typescript-eslint/no-unsafe-argument
+
+/Users/levanduy/Nam4/HK2/Mobile/Electronics/electronics-backend/src/users/users.service.ts
+  80:30  warning  Unsafe argument of type `any` assigned to a parameter of type `UpdateQuery<Document<unknown, {}, User, {}, DefaultSchemaOptions> & User & { _id: ObjectId; } & { __v: number; } & { id: string; }>`  @typescript-eslint/no-unsafe-argument
+
+✖ 36 problems (2 errors, 34 warnings)
+

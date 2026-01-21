@@ -30,29 +30,33 @@ export class ProductsService implements OnModuleInit {
   onModuleInit() {
     try {
       const changeStream = this.productModel.watch();
-      changeStream.on('change', async (change) => {
-        // Chỉ xử lý các thay đổi dạng update, insert, delete
-        if (
-          ['insert', 'update', 'replace', 'delete'].includes(
-            change.operationType,
-          )
-        ) {
-          this.logger.log(`Detected DB Change: ${change.operationType}`);
+      changeStream.on('change', (change) => {
+        (async () => {
+          // Chỉ xử lý các thay đổi dạng update, insert, delete
+          if (
+            ['insert', 'update', 'replace', 'delete'].includes(
+              change.operationType,
+            )
+          ) {
+            this.logger.log(`Detected DB Change: ${change.operationType}`);
 
-          // Với direct DB update, ta có thể không lấy được full document ngay
-          // Nên ta bắn một sự kiện chung hoặc cố gắng lấy documentId
-          let productId = null;
-          if ('documentKey' in change) {
-            productId = change.documentKey._id;
-          }
+            // Với direct DB update, ta có thể không lấy được full document ngay
+            // Nên ta bắn một sự kiện chung hoặc cố gắng lấy documentId
+            let productId = null;
+            if ('documentKey' in change) {
+              productId = change.documentKey._id;
+            }
 
-          if (productId) {
-            const doc = await this.productModel.findById(productId).lean();
-            if (doc) {
-              this.eventsGateway.emitProductUpdated(stripDocument(doc));
+            if (productId) {
+              const doc = await this.productModel.findById(productId).lean();
+              if (doc) {
+                this.eventsGateway.emitProductUpdated(stripDocument(doc));
+              }
             }
           }
-        }
+        })().catch((err) =>
+          this.logger.error(`Error processing change stream event: ${err}`),
+        );
       });
 
       changeStream.on('error', (error) => {
