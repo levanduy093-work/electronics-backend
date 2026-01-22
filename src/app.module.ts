@@ -7,7 +7,6 @@ import * as Joi from 'joi';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { CartsModule } from './carts/carts.module';
-import { ChatModule } from './chat/chat.module';
 import { EventsModule } from './events/events.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -88,7 +87,6 @@ import { SearchTrendsModule } from './search-trends/search-trends.module';
     PaymentsModule,
     ShipmentsModule,
     InventoryMovementsModule,
-    ChatModule,
     AiModule,
     HealthModule,
     EventsModule,
