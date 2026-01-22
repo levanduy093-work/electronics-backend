@@ -22,7 +22,7 @@ import { UpdateChatSessionDto } from './dto/update-chat-session.dto';
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(private readonly chatService: ChatService) { }
 
   @Post()
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateChatSessionDto) {
@@ -32,6 +32,11 @@ export class ChatController {
   @Get()
   findAll(@CurrentUser() user: JwtPayload) {
     return this.chatService.findAll(user);
+  }
+
+  @Delete('all')
+  removeAll(@CurrentUser() user: JwtPayload) {
+    return this.chatService.removeAll(user);
   }
 
   @Get(':id')

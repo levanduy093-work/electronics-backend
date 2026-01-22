@@ -78,6 +78,13 @@ export class ChatService {
     return stripDocument(doc);
   }
 
+  async removeAll(user: JwtPayload) {
+    const filter =
+      user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    const result = await this.chatModel.deleteMany(filter);
+    return { deletedCount: result.deletedCount };
+  }
+
   /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
   private mapMessage(msg: ChatMessageDto) {
     return {
