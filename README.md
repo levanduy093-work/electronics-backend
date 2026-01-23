@@ -14,6 +14,7 @@
 - **Quản lý kho**: Theo dõi biến động kho, mức tồn kho và các lô hàng.
 - **Cập nhật thời gian thực**: Sử dụng Socket.io cho thông báo và cập nhật theo thời gian thực.
 - **Tải lên hình ảnh**: Tích hợp Cloudinary để lưu trữ và quản lý hình ảnh hiệu quả.
+- **Tích hợp AI**: Tích hợp Google Gemini AI cho các tính năng thông minh (ví dụ: trò chuyện, gợi ý).
 - **Thông báo**: Thông báo hệ thống và thông báo mục tiêu (thông qua Firebase).
 - **Đánh giá & Xếp hạng**: Hệ thống đánh giá sản phẩm.
 
