@@ -1,0 +1,74 @@
+electronics-backend - Custom Non-Commercial License (CNCL) v1.0
+
+Copyright (c) 2026 Lê Văn Duy, Nguyễn Hoàng Phúc
+
+----------------------------------------
+1) Định nghĩa
+----------------------------------------
+"Phần Mềm" là mã nguồn, tài nguyên, tài liệu và mọi tệp đi kèm trong dự án electronics-backend.
+
+"Phi thương mại" là việc sử dụng không nhằm mục đích thu lợi nhuận hoặc tạo ra doanh thu trực tiếp hay gián tiếp.
+Để tránh hiểu nhầm, "mục đích thương mại" bao gồm nhưng không giới hạn ở:
+- Bán, cho thuê, hoặc cấp phép Phần Mềm/phiên bản phái sinh để lấy phí;
+- Tích hợp Phần Mềm vào sản phẩm/dịch vụ có thu phí hoặc gói trả phí;
+- Cung cấp Phần Mềm như một dịch vụ (SaaS) có thu phí;
+- Sử dụng Phần Mềm để quảng cáo, tiếp thị, hoặc thúc đẩy doanh thu (kể cả qua tài trợ/đối tác/affiliate);
+- Phân phối Phần Mềm trong môi trường có tường phí hoặc kèm theo điều kiện trả tiền để truy cập.
+
+----------------------------------------
+2) Cấp phép (Grant of License)
+----------------------------------------
+Với điều kiện tuân thủ đầy đủ giấy phép này, bạn được cấp quyền không độc quyền, miễn phí, có thể thu hồi
+để:
+- Sử dụng, sao chép và chạy Phần Mềm cho mục đích cá nhân, học tập, nghiên cứu, hoặc nội bộ;
+- Sửa đổi và tạo tác phẩm phái sinh;
+- Phân phối lại bản gốc hoặc bản đã sửa đổi, với điều kiện chỉ trong phạm vi Phi thương mại.
+
+----------------------------------------
+3) Điều kiện bắt buộc
+----------------------------------------
+Khi phân phối lại (bản gốc hoặc bản đã sửa đổi), bạn phải:
+- Giữ nguyên thông báo bản quyền và toàn bộ nội dung giấy phép này;
+- Ghi công rõ ràng tác giả gốc: "Lê Văn Duy" và "Nguyễn Hoàng Phúc";
+- Nếu có sửa đổi, phải nêu rõ bạn đã thay đổi gì (ví dụ trong README/CHANGELOG).
+
+----------------------------------------
+4) Hạn chế sử dụng
+----------------------------------------
+Bạn KHÔNG được:
+- Sử dụng Phần Mềm cho bất kỳ mục đích thương mại nào như định nghĩa ở Mục 1;
+- Gỡ bỏ/che giấu thông báo bản quyền, giấy phép, hoặc ghi công;
+- Hàm ý rằng tác giả gốc bảo trợ/đồng hành/đảm bảo cho sản phẩm của bạn nếu không có chấp thuận bằng văn bản.
+
+Nếu bạn cần sử dụng cho mục đích thương mại, hãy liên hệ chủ sở hữu bản quyền để xin giấy phép thương mại riêng.
+
+----------------------------------------
+5) Quyền nhãn hiệu
+----------------------------------------
+Giấy phép này không cấp bất kỳ quyền nào đối với nhãn hiệu, tên dự án, logo, hoặc nhận diện thương hiệu
+của tác giả/nhóm tác giả, trừ khi được cho phép bằng văn bản.
+
+----------------------------------------
+6) Chấm dứt
+----------------------------------------
+Giấy phép sẽ tự động chấm dứt ngay lập tức nếu bạn vi phạm bất kỳ điều khoản nào. Khi chấm dứt, bạn phải
+ngừng sử dụng và ngừng phân phối Phần Mềm, đồng thời xóa mọi bản sao mà bạn kiểm soát (trừ khi pháp luật
+yêu cầu lưu trữ).
+
+----------------------------------------
+7) Miễn trừ bảo hành
+----------------------------------------
+PHẦN MỀM ĐƯỢC CUNG CẤP "NGUYÊN TRẠNG" (AS IS), KHÔNG KÈM BẤT KỲ BẢO HÀNH NÀO, DÙ RÕ RÀNG HAY NGỤ Ý,
+BAO GỒM NHƯNG KHÔNG GIỚI HẠN Ở TÍNH THƯƠNG MẠI, PHÙ HỢP MỤC ĐÍCH CỤ THỂ, VÀ KHÔNG VI PHẠM.
+
+----------------------------------------
+8) Giới hạn trách nhiệm
+----------------------------------------
+TRONG MỌI TRƯỜNG HỢP, TÁC GIẢ/CHỦ SỞ HỮU BẢN QUYỀN KHÔNG CHỊU TRÁCH NHIỆM ĐỐI VỚI BẤT KỲ THIỆT HẠI NÀO
+(TRỰC TIẾP, GIÁN TIẾP, NGẪU NHIÊN, ĐẶC BIỆT, HỆ QUẢ, HOẶC PUNITIVE) PHÁT SINH TỪ HOẶC LIÊN QUAN ĐẾN
+VIỆC SỬ DỤNG HOẶC KHÔNG THỂ SỬ DỤNG PHẦN MỀM.
+
+----------------------------------------
+9) Luật áp dụng
+----------------------------------------
+Giấy phép này được điều chỉnh theo pháp luật Việt Nam, trừ khi quy định bắt buộc tại nơi bạn cư trú áp dụng khác.
