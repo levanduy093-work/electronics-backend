@@ -84,20 +84,6 @@ export class MailService {
         greeting = 'Xin chào!';
     }
 
-    // Inline SVG logo (base64 encoded for better email client support)
-    const logoSvg = `
-<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
-    </linearGradient>
-  </defs>
-  <circle cx="24" cy="24" r="22" fill="url(#grad1)"/>
-  <path d="M24 10L28 18L36 19L30 25L32 33L24 29L16 33L18 25L12 19L20 18L24 10Z" fill="white"/>
-  <path d="M24 14L26.5 19.5L32 20.5L28 24.5L29 30L24 27L19 30L20 24.5L16 20.5L21.5 19.5L24 14Z" fill="url(#grad1)"/>
-</svg>`.trim();
-
     const html = `
 <!DOCTYPE html>
 <html lang="vi">
@@ -121,10 +107,10 @@ export class MailService {
           
           <!-- Header với Logo -->
           <tr>
-            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%); padding: 48px 40px; text-align: center;">
-              <!-- Logo Circle -->
-              <div style="display: inline-block; background-color: rgba(255,255,255,0.95); width: 80px; height: 80px; border-radius: 50%; padding: 16px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);">
-                ${logoSvg}
+            <td style="background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 50%, #93C5FD 100%); padding: 48px 40px; text-align: center;">
+              <!-- Logo Icon -->
+              <div style="display: inline-block; background-color: rgba(255,255,255,0.95); width: 80px; height: 80px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); line-height: 80px; font-size: 40px;">
+                🛒
               </div>
               
               <!-- Brand Name -->
@@ -169,7 +155,7 @@ export class MailService {
                 </p>
                 
                 <!-- OTP Code -->
-                <div style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 16px 32px; border-radius: 12px; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.35);">
+                <div style="display: inline-block; background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); padding: 16px 32px; border-radius: 12px; box-shadow: 0 8px 24px rgba(59, 130, 246, 0.35);">
                   <p style="margin: 0; font-size: 40px; font-weight: 800; color: #ffffff; letter-spacing: 10px; font-family: 'SF Mono', 'Courier New', monospace;">
                     ${code}
                   </p>
@@ -212,7 +198,7 @@ export class MailService {
                       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                         <tr>
                           <td width="32" valign="top">
-                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; font-size: 12px; font-weight: bold; line-height: 24px;">1</div>
+                            <div style="background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; font-size: 12px; font-weight: bold; line-height: 24px;">1</div>
                           </td>
                           <td style="padding-left: 12px; color: #475569; font-size: 14px;">
                             Mở ứng dụng <strong>ElectroAI</strong> trên điện thoại
@@ -226,10 +212,10 @@ export class MailService {
                       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                         <tr>
                           <td width="32" valign="top">
-                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; font-size: 12px; font-weight: bold; line-height: 24px;">2</div>
+                            <div style="background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; font-size: 12px; font-weight: bold; line-height: 24px;">2</div>
                           </td>
                           <td style="padding-left: 12px; color: #475569; font-size: 14px;">
-                            Nhập mã xác nhận <strong style="color: #667eea;">${code}</strong> vào ô OTP
+                            Nhập mã xác nhận <strong style="color: #3B82F6;">${code}</strong> vào ô OTP
                           </td>
                         </tr>
                       </table>
@@ -240,7 +226,7 @@ export class MailService {
                       <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
                         <tr>
                           <td width="32" valign="top">
-                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; font-size: 12px; font-weight: bold; line-height: 24px;">3</div>
+                            <div style="background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); color: white; width: 24px; height: 24px; border-radius: 50%; text-align: center; font-size: 12px; font-weight: bold; line-height: 24px;">3</div>
                           </td>
                           <td style="padding-left: 12px; color: #475569; font-size: 14px;">
                             Nhấn <strong>"Xác nhận"</strong> để hoàn tất quá trình
@@ -287,7 +273,7 @@ export class MailService {
                         <tr>
                           <td style="background-color: #ffffff; padding: 10px 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
                             <span style="font-size: 14px;">📧</span>
-                            <span style="font-size: 13px; color: #667eea; font-weight: 600; margin-left: 6px;">Email</span>
+                            <span style="font-size: 13px; color: #3B82F6; font-weight: 600; margin-left: 6px;">Email</span>
                           </td>
                         </tr>
                       </table>
@@ -299,7 +285,7 @@ export class MailService {
                         <tr>
                           <td style="background-color: #ffffff; padding: 10px 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
                             <span style="font-size: 14px;">📞</span>
-                            <span style="font-size: 13px; color: #667eea; font-weight: 600; margin-left: 6px;">Hotline</span>
+                            <span style="font-size: 13px; color: #3B82F6; font-weight: 600; margin-left: 6px;">Hotline</span>
                           </td>
                         </tr>
                       </table>
@@ -311,7 +297,7 @@ export class MailService {
                         <tr>
                           <td style="background-color: #ffffff; padding: 10px 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
                             <span style="font-size: 14px;">💬</span>
-                            <span style="font-size: 13px; color: #667eea; font-weight: 600; margin-left: 6px;">Zalo</span>
+                            <span style="font-size: 13px; color: #3B82F6; font-weight: 600; margin-left: 6px;">Zalo</span>
                           </td>
                         </tr>
                       </table>
@@ -325,8 +311,8 @@ export class MailService {
                 <strong>Hỗ trợ khách hàng:</strong>
               </p>
               <p style="margin: 0; font-size: 13px; color: #64748b;">
-                📧 <a href="mailto:levanduy.work@gmail.com" style="color: #667eea; text-decoration: none;">levanduy.work@gmail.com</a> &nbsp;•&nbsp; 
-                📞 <a href="tel:0827733475" style="color: #667eea; text-decoration: none;">0827 733 475</a>
+                📧 <a href="mailto:levanduy.work@gmail.com" style="color: #3B82F6; text-decoration: none;">levanduy.work@gmail.com</a> &nbsp;•&nbsp; 
+                📞 <a href="tel:0827733475" style="color: #3B82F6; text-decoration: none;">0827 733 475</a>
               </p>
               
               <!-- Divider -->
