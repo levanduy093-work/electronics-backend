@@ -110,7 +110,7 @@ export class MailService {
             <td style="background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 50%, #93C5FD 100%); padding: 48px 40px; text-align: center;">
               <!-- Logo Icon -->
               <div style="display: inline-block; background-color: rgba(255,255,255,0.95); width: 80px; height: 80px; border-radius: 20px; margin-bottom: 20px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); line-height: 80px; font-size: 40px;">
-                🛒
+                ${icon}
               </div>
               
               <!-- Brand Name -->
