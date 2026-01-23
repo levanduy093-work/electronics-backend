@@ -8,7 +8,8 @@ import * as streamifier from 'streamifier';
 
 @Injectable()
 export class CloudinaryService {
-  private readonly maxFileSizeBytes = 5 * 1024 * 1024; // 5MB
+  private readonly maxImageFileSizeBytes = 5 * 1024 * 1024; // 5MB
+  private readonly maxRawFileSizeBytes = 10 * 1024 * 1024; // 10MB for PDFs and other docs
 
   private buildFallbackFolder() {
     const now = new Date();
@@ -28,14 +29,19 @@ export class CloudinaryService {
   private uploadBuffer(
     buffer: Buffer,
     folder: string,
-    format?: 'jpg' | 'jpeg' | 'png',
+    options?: {
+      format?: 'jpg' | 'jpeg' | 'png';
+      resourceType?: 'image' | 'raw';
+    },
   ): Promise<UploadApiResponse | UploadApiErrorResponse> {
+    const resourceType = options?.resourceType ?? 'image';
+    const format = options?.format;
     return new Promise((resolve, reject) => {
       const upload = cloudinary.uploader.upload_stream(
         {
           folder,
-          resource_type: 'image',
-          format,
+          resource_type: resourceType,
+          ...(format ? { format } : {}),
         },
         (error, result) => {
           if (error) return reject(new Error(error.message));
@@ -71,14 +77,6 @@ export class CloudinaryService {
     throw new BadRequestException('URL phải là ảnh định dạng jpg hoặc png');
   }
 
-  async uploadImage(
-    file: Express.Multer.File,
-    folder?: string,
-  ): Promise<UploadApiResponse | UploadApiErrorResponse> {
-    const safeFolder = this.sanitizeFolder(folder);
-    return this.uploadBuffer(file.buffer, safeFolder);
-  }
-
   async uploadImageByUrl(
     url: string,
     folder?: string,
@@ -99,13 +97,42 @@ export class CloudinaryService {
     const contentType = response.headers.get('content-type') || '';
     const arrayBuffer = await response.arrayBuffer();
 
-    if (arrayBuffer.byteLength > this.maxFileSizeBytes) {
+    if (arrayBuffer.byteLength > this.maxImageFileSizeBytes) {
       throw new BadRequestException('Ảnh vượt quá giới hạn 5MB');
     }
 
     const targetFormat = this.detectTargetFormat(contentType, url);
     const buffer = Buffer.from(arrayBuffer);
 
-    return this.uploadBuffer(buffer, safeFolder, targetFormat);
+    return this.uploadBuffer(buffer, safeFolder, {
+      format: targetFormat,
+      resourceType: 'image',
+    });
+  }
+
+  async uploadImage(
+    file: Express.Multer.File,
+    folder?: string,
+  ): Promise<UploadApiResponse | UploadApiErrorResponse> {
+    const safeFolder = this.sanitizeFolder(folder);
+    if (file.size > this.maxImageFileSizeBytes) {
+      throw new BadRequestException('Ảnh vượt quá giới hạn 5MB');
+    }
+    return this.uploadBuffer(file.buffer, safeFolder, { resourceType: 'image' });
+  }
+
+  async uploadRawFile(
+    file: Express.Multer.File,
+    folder?: string,
+  ): Promise<UploadApiResponse | UploadApiErrorResponse> {
+    const safeFolder = this.sanitizeFolder(folder);
+    if (file.size > this.maxRawFileSizeBytes) {
+      throw new BadRequestException('File vượt quá giới hạn 10MB');
+    }
+    // Chỉ cho phép PDF nên set format cố định là 'pdf' để Cloudinary nhận diện đúng
+    return this.uploadBuffer(file.buffer, safeFolder, {
+      resourceType: 'raw',
+      format: 'pdf',
+    });
   }
 }

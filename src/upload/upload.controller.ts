@@ -50,4 +50,22 @@ export class UploadController {
     const safeFolder = sanitizeFolder(folder);
     return this.cloudinaryService.uploadImageByUrl(body.url, safeFolder);
   }
+
+  @Post('file')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFile(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 1024 * 1024 * 10 }), // 10MB
+          new FileTypeValidator({ fileType: '.(pdf)' }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @Query('folder') folder?: string,
+  ) {
+    const safeFolder = sanitizeFolder(folder);
+    return this.cloudinaryService.uploadRawFile(file, safeFolder);
+  }
 }
