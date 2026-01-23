@@ -20,9 +20,11 @@ import { SendChangePasswordOtpDto } from './dto/send-change-password-otp.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtPayload } from '../common/types/jwt-payload';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
@@ -230,6 +232,10 @@ export class AuthService {
       existing,
       dto.currentPassword,
     );
+    this.logger.log(`Verifying password for user: ${user.email}`);
+    this.logger.log(`Current password provided (length): ${dto.currentPassword?.length}`);
+    this.logger.log(`Password comparison result: ${isValid}`);
+
     if (!isValid) {
       throw new UnauthorizedException('Mật khẩu hiện tại không đúng');
     }
