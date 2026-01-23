@@ -30,7 +30,7 @@ export class CloudinaryService {
     buffer: Buffer,
     folder: string,
     options?: {
-      format?: 'jpg' | 'jpeg' | 'png';
+      format?: string;
       resourceType?: 'image' | 'raw';
     },
   ): Promise<UploadApiResponse | UploadApiErrorResponse> {

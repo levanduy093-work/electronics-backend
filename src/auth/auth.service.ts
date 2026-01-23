@@ -29,7 +29,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
     private readonly mailService: MailService,
-  ) {}
+  ) { }
 
   async register(dto: RegisterDto) {
     const existing = await this.usersService.findByEmail(dto.email);
@@ -51,11 +51,11 @@ export class AuthService {
   async login(dto: LoginDto) {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Tài khoản hoặc mật khẩu không chính xác');
     }
     const isValid = await this.usersService.comparePassword(user, dto.password);
     if (!isValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Tài khoản hoặc mật khẩu không chính xác');
     }
     const userId = (user as any)._id?.toString?.() ?? '';
     const tokens = this.signTokens(userId, user.email ?? '', user.role);
@@ -89,7 +89,7 @@ export class AuthService {
       'register',
       payload,
     );
-    await this.mailService.sendOtp(dto.email, code, expiresAt);
+    await this.mailService.sendOtp(dto.email, code, expiresAt, 'register');
     return { message: 'OTP has been sent to your email' };
   }
 
@@ -166,7 +166,7 @@ export class AuthService {
       dto.email,
       'reset-password',
     );
-    await this.mailService.sendOtp(dto.email, code, expiresAt);
+    await this.mailService.sendOtp(dto.email, code, expiresAt, 'reset-password');
     return { message: 'Đã gửi mã xác nhận đến email của bạn' };
   }
 
@@ -240,7 +240,7 @@ export class AuthService {
         userId: user.sub,
       },
     );
-    await this.mailService.sendOtp(user.email, code, expiresAt);
+    await this.mailService.sendOtp(user.email, code, expiresAt, 'change-password');
     return { message: 'Đã gửi mã xác nhận đến email của bạn' };
   }
 
