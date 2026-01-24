@@ -115,6 +115,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    this.ensureAddressArray(user);
 
     if (address.isDefault) {
       user.address = user.address.map((addr) => ({
@@ -135,6 +136,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    this.ensureAddressArray(user);
     if (index < 0 || index >= user.address.length) {
       throw new NotFoundException('Address not found');
     }
@@ -152,6 +154,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    this.ensureAddressArray(user);
     if (index < 0 || index >= user.address.length) {
       throw new NotFoundException('Address not found');
     }
@@ -175,6 +178,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    this.ensureAddressArray(user);
     if (index < 0 || index >= user.address.length) {
       throw new NotFoundException('Address not found');
     }
@@ -189,7 +193,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return user.address || [];
+    return Array.isArray((user as any).address) ? (user as any).address : [];
   }
 
   async getFavorites(userId: string) {
@@ -402,6 +406,13 @@ export class UsersService {
     const { __v, ...rest } = product;
     return rest;
   };
+
+  // Ensure address array exists for legacy user documents that may miss the field
+  private ensureAddressArray(user: UserDocument) {
+    if (!Array.isArray(user.address)) {
+      user.address = [];
+    }
+  }
 
   private async hashPassword(password?: string) {
     if (password) {
