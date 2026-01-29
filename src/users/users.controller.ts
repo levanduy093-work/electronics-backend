@@ -43,6 +43,11 @@ export class UsersController {
   }
 
   // User endpoints - users can manage their own addresses
+  @Get('me')
+  getMyProfile(@CurrentUser() user: JwtPayload) {
+    return this.usersService.findOne(user.sub);
+  }
+
   @Get('me/addresses')
   getMyAddresses(@CurrentUser() user: JwtPayload) {
     return this.usersService.getUserAddresses(user.sub);
