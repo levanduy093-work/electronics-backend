@@ -114,10 +114,65 @@ type PendingAction = {
   expiresAt: number;
 };
 
+type ProductIndexItem = {
+  productId: string;
+  name: string;
+  code?: string;
+  category?: string;
+  description?: string;
+  price: number;
+  stock: number;
+  image?: string;
+  codeNormalized?: string;
+  tokens: {
+    name: Set<string>;
+    category: Set<string>;
+    description: Set<string>;
+    all: Set<string>;
+    value: Set<string>;
+  };
+};
+
+type ProductScore = {
+  product: ProductIndexItem;
+  score: number;
+  matchedTokens: number;
+  codeExact: boolean;
+};
+
+type ProductSearchMeta = {
+  tokens: string[];
+  valueTokens: string[];
+  totalCandidates: number;
+  confident: boolean;
+  topScore: number;
+};
+
+type ProductSearchResult = {
+  cards: AiProductCard[];
+  contextLines: string[];
+  meta: ProductSearchMeta;
+};
+
+type IntentFlags = {
+  normalizedMessage: string;
+  wantsOrders: boolean;
+  wantsAddresses: boolean;
+  wantsProducts: boolean;
+  needsFreeform: boolean;
+};
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly pendingActions = new Map<string, PendingAction>();
+  private readonly productIndexTtlMs = 2 * 60 * 1000; // 2 minutes
+  private readonly imagePartsTtlMs = 10 * 60 * 1000; // 10 minutes
+  private productIndexCache?: { items: ProductIndexItem[]; expiresAt: number };
+  private readonly imagePartsCache = new Map<
+    string,
+    { parts: Array<any>; raw?: string; expiresAt: number }
+  >();
 
   constructor(
     private readonly config: ConfigService,
@@ -141,15 +196,28 @@ export class AiService {
     }
 
     const model = this.config.get<string>('GEMINI_MODEL') || 'gemini-1.5-flash';
+    const intent = this.detectIntentFlags(dto.message);
 
     // If image is provided, try vision flow first
     if (dto.imageUrl) {
-      const { parts, raw } = await this.extractPartsFromImage(
-        dto.message,
-        dto.imageUrl,
-        apiKey,
-        model,
-      );
+      const cacheKey = this.buildImageCacheKey(dto.imageUrl, dto.message);
+      const cached = this.getCachedImageParts(cacheKey);
+      let parts: Array<any> = [];
+      let raw: string | undefined;
+      if (cached) {
+        parts = cached.parts;
+        raw = cached.raw;
+      } else {
+        const extracted = await this.extractPartsFromImage(
+          dto.message,
+          dto.imageUrl,
+          apiKey,
+          model,
+        );
+        parts = extracted.parts;
+        raw = extracted.raw;
+        this.setCachedImageParts(cacheKey, parts, raw);
+      }
       // Pass apiKey and model to AI-filter products
       const allCards = await this.searchProductsByParts(parts, apiKey, model);
       const productCards = allCards.filter(
@@ -160,18 +228,44 @@ export class AiService {
       return { reply, cards: productCards, actions };
     }
 
-    const { contextText, productCards } = await this.buildContext(
-      dto.message,
-      user,
-    );
-    const rerankedCards = await this.rerankProducts(
-      dto.message,
+    const {
+      contextText,
       productCards,
-      model,
-      apiKey,
-    );
-    const systemInstruction = this.buildSystemInstruction(user, contextText);
+      productSearchMeta,
+      orderLines,
+      addressLines,
+    } = await this.buildContext(dto.message, user, intent);
 
+    const deterministicReply = this.buildDeterministicReply({
+      message: dto.message,
+      intent,
+      productCards,
+      productSearchMeta,
+      orderLines,
+      addressLines,
+    });
+
+    if (deterministicReply && !intent.needsFreeform) {
+      const actions = this.buildActions(dto.message, productCards, user.sub);
+      return { reply: deterministicReply, cards: productCards, actions };
+    }
+
+    let finalCards = productCards;
+    const shouldRerank = this.shouldRerankProducts(
+      intent,
+      productSearchMeta,
+      productCards,
+    );
+    if (shouldRerank) {
+      finalCards = await this.rerankProducts(
+        dto.message,
+        productCards,
+        model,
+        apiKey,
+      );
+    }
+
+    const systemInstruction = this.buildSystemInstruction(user, contextText);
     const contents = this.buildContents(dto);
     const requestBody: GeminiGenerateContentRequest = {
       systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -183,7 +277,6 @@ export class AiService {
 
     // Parse relevant codes from LLM response to filter irrelevant products from UI
     let reply = rawReply;
-    let finalCards = rerankedCards;
     const codeMatch = rawReply.match(/RELEVANT_CODES:\s*\[(.*?)\]/);
     if (codeMatch) {
       try {
@@ -200,9 +293,7 @@ export class AiService {
           );
         } else {
           // AI returned empty list [] -> user likely asked something else or no product matched
-          // But if we have productCards from search, maybe we should keep them if AI didn't mean to filter all?
           // Instruction says: "Nếu không có sản phẩm phù hợp, trả về []".
-          // So if [], we should probably hide cards to respect "Nó chỉ nên hiển thị đúng cái nó trả lời".
           finalCards = [];
         }
       } catch {
@@ -313,19 +404,122 @@ export class AiService {
     return contents;
   }
 
-  private async buildContext(
-    message: string,
-    user: JwtPayload,
-  ): Promise<{ contextText: string; productCards: AiProductCard[] }> {
-    const parts: string[] = [];
-    const productCards: AiProductCard[] = [];
+  private detectIntentFlags(message: string): IntentFlags {
     const normalizedMessage = this.normalizeText(message);
-
     const wantsOrders =
       /don\s*hang|don\s*mua|lich\s*su\s*mua|order|van\s*chuyen|giao\s*hang|tracking|ma\s*don|huy\s*don|trang\s*thai\s*don|cancel/.test(
         normalizedMessage,
       );
-    if (wantsOrders) {
+    const wantsAddresses =
+      /dia\s*chi|so\s*dia\s*chi|address|shipping\s*address|dia\s*chi\s*giao|dia\s*chi\s*nhan|dia\s*chi\s*mac\s*dinh/.test(
+        normalizedMessage,
+      );
+    const wantsProducts =
+      this.extractQueryTokens(message, normalizedMessage).length > 0;
+    const needsFreeform =
+      /tai\s*sao|vi\s*sao|so\s*sanh|khac\s*nhau|nen\s*chon|tu\s*van|huong\s*dan|cach\s*lam|la\s*gi|dung\s*de|nguyen\s*ly|co\s*phai|thong\s*so|how\s*to|why|compare|recommend|advisor|guide/.test(
+        normalizedMessage,
+      ) || (message || '').length > 350;
+
+    return {
+      normalizedMessage,
+      wantsOrders,
+      wantsAddresses,
+      wantsProducts,
+      needsFreeform,
+    };
+  }
+
+  private shouldRerankProducts(
+    intent: IntentFlags,
+    meta: ProductSearchMeta | null,
+    products: AiProductCard[],
+  ) {
+    if (!meta || !products?.length) return false;
+    if (intent.needsFreeform) return false; // already using LLM for reply; avoid extra cost
+    if (meta.confident) return false;
+    if (products.length < 6) return false;
+    if (products.length > 40) return false;
+    return true;
+  }
+
+  private formatProductBullet(card: AiProductCard) {
+    const code = card.code || 'N/A';
+    const price = Number.isFinite(card.price) ? `${card.price} VND` : 'N/A';
+    const stock = Number.isFinite(card.stock)
+      ? `Tồn kho ${card.stock}`
+      : 'N/A';
+    return `- ${card.name || 'N/A'} | ${code} | ${price} | ${stock}`;
+  }
+
+  private buildDeterministicReply(input: {
+    message: string;
+    intent: IntentFlags;
+    productCards: AiProductCard[];
+    productSearchMeta: ProductSearchMeta | null;
+    orderLines: string[];
+    addressLines: string[];
+  }) {
+    const lines: string[] = [];
+
+    if (input.intent.wantsOrders) {
+      lines.push('Đơn hàng gần đây:');
+      lines.push(...(input.orderLines.length ? input.orderLines : ['- Không có đơn hàng nào.']));
+    }
+
+    if (input.intent.wantsAddresses) {
+      lines.push('Địa chỉ đã lưu:');
+      lines.push(
+        ...(input.addressLines.length
+          ? input.addressLines
+          : ['- Chưa có địa chỉ nào.']),
+      );
+    }
+
+    if (input.intent.wantsProducts) {
+      if (input.productCards.length) {
+        if (input.productCards.length === 1) {
+          lines.push('Gợi ý sản phẩm');
+        } else {
+          lines.push('Danh sách sản phẩm phù hợp:');
+        }
+        lines.push(...input.productCards.map((c) => this.formatProductBullet(c)));
+
+        if (input.productSearchMeta && !input.productSearchMeta.confident) {
+          lines.push(
+            'Bạn cho mình thêm mã hoặc thông số (giá trị, loại linh kiện) để lọc chính xác hơn nhé.',
+          );
+        }
+      } else {
+        lines.push('Chưa tìm thấy sản phẩm phù hợp.');
+        lines.push(
+          'Bạn cho mình thêm mã sản phẩm, giá trị linh kiện hoặc loại linh kiện nhé.',
+        );
+      }
+    }
+
+    if (!lines.length) return null;
+    return lines.join('\n');
+  }
+
+  private async buildContext(
+    message: string,
+    user: JwtPayload,
+    intent: IntentFlags,
+  ): Promise<{
+    contextText: string;
+    productCards: AiProductCard[];
+    productSearchMeta: ProductSearchMeta | null;
+    orderLines: string[];
+    addressLines: string[];
+  }> {
+    const parts: string[] = [];
+    const productCards: AiProductCard[] = [];
+    const orderLines: string[] = [];
+    const addressLines: string[] = [];
+    let productSearchMeta: ProductSearchMeta | null = null;
+
+    if (intent.wantsOrders) {
       const orders = await this.ordersService.findAll(user);
       const latest = [...(orders as OrderContext[])]
         .sort((a, b) => {
@@ -338,7 +532,7 @@ export class AiService {
           return atB - atA;
         })
         .slice(0, 5);
-      const orderLines = latest.map((o) => {
+      const orderLineItems = latest.map((o) => {
         const code = o?.code || (o?._id ? String(o._id as any) : '');
         const cancelled = o?.isCancelled ? ' (ĐÃ HỦY)' : '';
         const total =
@@ -350,6 +544,7 @@ export class AiService {
           : 'paymentStatus=N/A';
         return `- ${code}${cancelled} | ${shipped} | ${payment} | ${paymentStatus} | total=${total}`;
       });
+      orderLines.push(...orderLineItems);
 
       parts.push(
         [
@@ -359,121 +554,63 @@ export class AiService {
       );
     }
 
-    const wantsAddresses =
-      /dia\s*chi|so\s*dia\s*chi|address|shipping\s*address|dia\s*chi\s*giao|dia\s*chi\s*nhan|dia\s*chi\s*mac\s*dinh/.test(
-        normalizedMessage,
-      );
-    if (wantsAddresses) {
+    if (intent.wantsAddresses) {
       const addresses = await this.usersService.getUserAddresses(user.sub);
       const sorted = [...(addresses as AddressContext[])].sort(
         (a, b) => Number(b.isDefault) - Number(a.isDefault),
       );
+      if (sorted.length) {
+        addressLines.push(
+          ...sorted.map((addr) => {
+            const receiver = addr?.name || 'Người nhận';
+            const phone = addr?.phone || 'N/A';
+            const line1 = [
+              addr?.street,
+              addr?.ward,
+              addr?.district,
+              addr?.city,
+            ]
+              .filter(Boolean)
+              .join(', ');
+            const type = addr?.type ? ` | ${addr.type}` : '';
+            const isDefault = addr?.isDefault ? ' (mặc định)' : '';
+            return `- ${receiver} | ${phone} | ${line1 || 'Địa chỉ trống'}${type}${isDefault}`;
+          }),
+        );
+      }
+
       parts.push(
-        sorted.length
+        addressLines.length
           ? [
               'ĐỊA CHỈ ĐÃ LƯU (ưu tiên địa chỉ mặc định):',
-              ...sorted.map((addr) => {
-                const receiver = addr?.name || 'Người nhận';
-                const phone = addr?.phone || 'N/A';
-                const line1 = [
-                  addr?.street,
-                  addr?.ward,
-                  addr?.district,
-                  addr?.city,
-                ]
-                  .filter(Boolean)
-                  .join(', ');
-                const type = addr?.type ? ` | ${addr.type}` : '';
-                const isDefault = addr?.isDefault ? ' (mặc định)' : '';
-                return `- ${receiver} | ${phone} | ${line1 || 'Địa chỉ trống'}${type}${isDefault}`;
-              }),
+              ...addressLines,
             ].join('\n')
           : 'ĐỊA CHỈ ĐÃ LƯU: chưa có địa chỉ nào.',
       );
     }
 
-    const productHints = this.extractKeywords(message);
-    if (productHints.length) {
-      const orClauses = productHints.map((token) => {
-        const rx = this.buildAccentRegex(token);
-        return [
-          { name: rx },
-          { code: rx },
-          { category: rx },
-          { description: rx },
-        ];
-      });
+    if (intent.wantsProducts) {
+      const search = await this.searchProductsDeterministic(message);
+      productCards.push(...search.cards);
+      productSearchMeta = search.meta;
 
-      // Try fuzzy AND search first: products that match ALL keywords (in name, code, category or description)
-      // This helps when user searches specific items like "Điện trở 10k" -> must have "Điện trở" AND "10k"
-      let products: ProductContext[] = [];
-      if (productHints.length > 1) {
-        const andClauses = orClauses.map((group) => ({ $or: group }));
-        products = (await this.productModel
-          .find({ $and: andClauses })
-          .select({
-            name: 1,
-            category: 1,
-            code: 1,
-            price: 1,
-            stock: 1,
-            images: 1,
-          })
-          .limit(40)
-          .lean()
-          .exec()) as ProductContext[];
-      }
-
-      // Fallback to broad OR search if no precise match
-      if (!products.length) {
-        const flatOr = orClauses.flat();
-        products = (await this.productModel
-          .find(flatOr.length ? { $or: flatOr } : {})
-          .select({
-            name: 1,
-            category: 1,
-            code: 1,
-            price: 1,
-            stock: 1,
-            images: 1,
-          })
-          .limit(40)
-          .lean()
-          .exec()) as ProductContext[];
-      }
-
-      if (products.length) {
-        productCards.push(
-          ...products.map((p) => ({
-            productId: String(p._id),
-            name: p.name || '',
-            price: p.price?.salePrice ?? p.price?.originalPrice ?? 0,
-            stock: typeof p.stock === 'number' ? p.stock : 0,
-            category: p.category,
-            code: p.code,
-            image: Array.isArray(p.images) ? p.images[0] : undefined,
-          })),
-        );
-
+      if (search.contextLines.length) {
         parts.push(
           [
-            'SẢN PHẨM LIÊN QUAN (tối đa 40):',
-            ...products.map((p) => {
-              const code = p?.code ? `code=${p.code}` : 'code=N/A';
-              const cat = p?.category ? `cat=${p.category}` : 'cat=N/A';
-              const price = p?.price?.salePrice ?? p?.price?.originalPrice;
-              const priceText =
-                typeof price === 'number' ? `${price} VND` : 'N/A';
-              const stockText =
-                typeof p?.stock === 'number' ? `stock=${p.stock}` : 'stock=N/A';
-              return `- ${p?.name || 'N/A'} | ${code} | ${cat} | price=${priceText} | ${stockText}`;
-            }),
+            'SẢN PHẨM LIÊN QUAN (tối đa 30):',
+            ...search.contextLines,
           ].join('\n'),
         );
       }
     }
 
-    return { contextText: parts.join('\n\n'), productCards };
+    return {
+      contextText: parts.join('\n\n'),
+      productCards,
+      productSearchMeta,
+      orderLines,
+      addressLines,
+    };
   }
 
   private extractKeywords(text: string) {
@@ -528,6 +665,16 @@ export class AiService {
       'shop',
       'cai',
       'cái',
+      'don',
+      'đơn',
+      'dia',
+      'địa',
+      'chi',
+      'chỉ',
+      'order',
+      'tracking',
+      'address',
+      'shipping',
       'dang',
       'đang',
       'het',
@@ -538,32 +685,278 @@ export class AiService {
     return Array.from(new Set(keywords));
   }
 
-  private escapeRegExp(value: string) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  private normalizeForSearch(value: string) {
+    return (value || '')
+      .replace(/µ/gi, 'u')
+      .replace(/Ω/gi, 'ohm')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/gi, 'd')
+      .toLowerCase();
   }
 
-  private buildAccentRegex(value: string) {
-    const accentMap: Record<string, string> = {
-      a: 'aàáạảãăằắặẳẵâầấậẩẫ',
-      e: 'eèéẹẻẽêềếệểễ',
-      i: 'iìíịỉĩ',
-      o: 'oòóọỏõôồốộổỗơờớợởỡ',
-      u: 'uùúụủũưừứựửữ',
-      y: 'yỳýỵỷỹ',
-      d: 'dđ',
-    };
+  private tokenize(value: string) {
+    const cleaned = this.normalizeForSearch(value).replace(/[^a-z0-9]+/g, ' ');
+    return cleaned.split(/\s+/).filter(Boolean);
+  }
 
-    const pattern = value
-      .split('')
-      .map((ch) => {
-        const lower = ch.toLowerCase();
-        const group = accentMap[lower];
-        if (group) return `[${this.escapeRegExp(group)}]`;
-        return this.escapeRegExp(ch);
+  private deriveSynonymTokens(normalizedMessage: string) {
+    const tokens = new Set<string>();
+    if (/\bdien\s*tro\b/.test(normalizedMessage) || /\bresistor\b/.test(normalizedMessage)) {
+      tokens.add('resistor');
+    }
+    if (/\btu\s*(dien)?\b/.test(normalizedMessage) || /\bcapacitor\b/.test(normalizedMessage)) {
+      tokens.add('capacitor');
+    }
+    if (/\bdiode\b/.test(normalizedMessage)) {
+      tokens.add('diode');
+    }
+    if (/\bled\b/.test(normalizedMessage)) {
+      tokens.add('led');
+    }
+    if (/\btransistor\b/.test(normalizedMessage)) {
+      tokens.add('transistor');
+    }
+    if (/\bmosfet\b/.test(normalizedMessage)) {
+      tokens.add('mosfet');
+    }
+    if (/\bvi\s*mach\b/.test(normalizedMessage) || /\bchip\b/.test(normalizedMessage) || /\bic\b/.test(normalizedMessage)) {
+      tokens.add('ic');
+    }
+    if (/\brelay\b/.test(normalizedMessage)) {
+      tokens.add('relay');
+    }
+    if (/\bcong\s*ket|connector|jack\b/.test(normalizedMessage)) {
+      tokens.add('connector');
+    }
+    return Array.from(tokens);
+  }
+
+  private extractQueryTokens(message: string, normalizedMessage?: string) {
+    const base = this.extractKeywords(message);
+    const tokens = base.flatMap((t) => this.tokenize(t));
+    const extra = this.deriveSynonymTokens(
+      normalizedMessage ?? this.normalizeText(message),
+    );
+    const combined = new Set<string>();
+    tokens.forEach((t) => combined.add(t));
+    extra.forEach((t) => combined.add(t));
+    return Array.from(combined).slice(0, 12);
+  }
+
+  private extractValueTokens(text: string) {
+    const normalized = this.normalizeForSearch(text);
+    const matches =
+      normalized.match(
+        /\b\d+(?:\.\d+)?\s*(?:k|m|g|u|n|p)?\s*(?:ohm|hz|v|a|w|f|h)?\b/g,
+      ) || [];
+    const tokens = matches
+      .map((m) => m.replace(/\s+/g, ''))
+      .filter((m) => m.length >= 2);
+    const expanded = new Set<string>();
+    for (const token of tokens) {
+      expanded.add(token);
+      const stripped = token.replace(/(ohm|hz|v|a|w|f|h)$/i, '');
+      if (stripped.length >= 2) expanded.add(stripped);
+    }
+    return Array.from(expanded).slice(0, 12);
+  }
+
+  private buildProductIndexItem(p: ProductContext & { description?: string }) {
+    const name = p.name || '';
+    const category = p.category || '';
+    const description = p.description || '';
+    const code = p.code || '';
+    const nameTokens = new Set(this.tokenize(name));
+    const categoryTokens = new Set(this.tokenize(category));
+    const descriptionTokens = new Set(this.tokenize(description));
+    const valueTokens = new Set([
+      ...this.extractValueTokens(name),
+      ...this.extractValueTokens(description),
+      ...this.extractValueTokens(code),
+    ]);
+    const allTokens = new Set<string>();
+    nameTokens.forEach((t) => allTokens.add(t));
+    categoryTokens.forEach((t) => allTokens.add(t));
+    descriptionTokens.forEach((t) => allTokens.add(t));
+    if (code) allTokens.add(this.normalizeForSearch(code));
+
+    return {
+      productId: String(p._id),
+      name,
+      code: p.code,
+      category: p.category,
+      description,
+      price: p.price?.salePrice ?? p.price?.originalPrice ?? 0,
+      stock: typeof p.stock === 'number' ? p.stock : 0,
+      image: Array.isArray(p.images) ? p.images[0] : undefined,
+      codeNormalized: code ? this.normalizeForSearch(code) : undefined,
+      tokens: {
+        name: nameTokens,
+        category: categoryTokens,
+        description: descriptionTokens,
+        all: allTokens,
+        value: valueTokens,
+      },
+    } satisfies ProductIndexItem;
+  }
+
+  private async getProductIndex() {
+    const now = Date.now();
+    if (this.productIndexCache && this.productIndexCache.expiresAt > now) {
+      return this.productIndexCache.items;
+    }
+
+    const products = (await this.productModel
+      .find({})
+      .select({
+        name: 1,
+        category: 1,
+        code: 1,
+        price: 1,
+        stock: 1,
+        images: 1,
+        description: 1,
       })
-      .join('');
+      .lean()
+      .exec()) as Array<ProductContext & { description?: string }>;
 
-    return new RegExp(pattern, 'i');
+    const items = products.map((p) => this.buildProductIndexItem(p));
+    this.productIndexCache = {
+      items,
+      expiresAt: now + this.productIndexTtlMs,
+    };
+    return items;
+  }
+
+  private scoreProducts(
+    products: ProductIndexItem[],
+    queryTokens: string[],
+    valueTokens: string[],
+  ): ProductScore[] {
+    const scores: ProductScore[] = [];
+    for (const product of products) {
+      let score = 0;
+      let matchedTokens = 0;
+      let codeExact = false;
+
+      for (const token of queryTokens) {
+        if (!token) continue;
+        if (product.codeNormalized && token === product.codeNormalized) {
+          score += 200;
+          matchedTokens += 2;
+          codeExact = true;
+          continue;
+        }
+        if (product.tokens.name.has(token)) {
+          score += 30;
+          matchedTokens += 1;
+          continue;
+        }
+        if (product.tokens.category.has(token)) {
+          score += 20;
+          matchedTokens += 1;
+          continue;
+        }
+        if (product.tokens.description.has(token)) {
+          score += 10;
+          matchedTokens += 1;
+        }
+      }
+
+      for (const token of valueTokens) {
+        if (product.tokens.value.has(token)) {
+          score += 80;
+          matchedTokens += 1;
+        }
+      }
+
+      if (matchedTokens >= 3) score += 10;
+      if (score > 0) {
+        scores.push({ product, score, matchedTokens, codeExact });
+      }
+    }
+
+    return scores;
+  }
+
+  private assessConfidence(
+    scores: ProductScore[],
+    queryTokens: string[],
+    valueTokens: string[],
+  ) {
+    if (!scores.length) return false;
+    const top = scores[0];
+    if (top.codeExact) return true;
+    const totalTokens = Math.max(1, queryTokens.length + valueTokens.length);
+    const matchRatio = top.matchedTokens / totalTokens;
+    const gap = scores.length > 1 ? top.score - scores[1].score : top.score;
+    return top.score >= 90 && (matchRatio >= 0.6 || gap >= 30);
+  }
+
+  private async searchProductsDeterministic(
+    message: string,
+  ): Promise<ProductSearchResult> {
+    const index = await this.getProductIndex();
+    const normalizedMessage = this.normalizeText(message);
+    const queryTokens = this.extractQueryTokens(message, normalizedMessage);
+    const valueTokens = this.extractValueTokens(message);
+
+    if (!queryTokens.length && !valueTokens.length) {
+      return {
+        cards: [],
+        contextLines: [],
+        meta: {
+          tokens: [],
+          valueTokens: [],
+          totalCandidates: 0,
+          confident: false,
+          topScore: 0,
+        },
+      };
+    }
+
+    const scores = this.scoreProducts(index, queryTokens, valueTokens)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 60);
+
+    const confident = this.assessConfidence(scores, queryTokens, valueTokens);
+    const topScores = scores.slice(0, 15);
+    const contextScores = scores.slice(0, 30);
+
+    const cards = topScores.map((s) => ({
+      productId: s.product.productId,
+      name: s.product.name,
+      price: s.product.price,
+      stock: s.product.stock,
+      category: s.product.category,
+      code: s.product.code,
+      image: s.product.image,
+    }));
+
+    const contextLines = contextScores.map((s) => {
+      const code = s.product.code ? `code=${s.product.code}` : 'code=N/A';
+      const cat = s.product.category ? `cat=${s.product.category}` : 'cat=N/A';
+      const priceText = Number.isFinite(s.product.price)
+        ? `${s.product.price} VND`
+        : 'N/A';
+      const stockText = Number.isFinite(s.product.stock)
+        ? `stock=${s.product.stock}`
+        : 'stock=N/A';
+      return `- ${s.product.name || 'N/A'} | ${code} | ${cat} | price=${priceText} | ${stockText}`;
+    });
+
+    return {
+      cards,
+      contextLines,
+      meta: {
+        tokens: queryTokens,
+        valueTokens,
+        totalCandidates: scores.length,
+        confident,
+        topScore: scores[0]?.score ?? 0,
+      },
+    };
   }
 
   private async rerankProducts(
@@ -653,6 +1046,52 @@ export class AiService {
     }
 
     return [];
+  }
+
+  private buildImageCacheKey(imageUrl: string, message?: string) {
+    const normalizedMsg = this.normalizeForSearch(message || '').slice(0, 80);
+    return `${imageUrl}::${normalizedMsg}`;
+  }
+
+  private pruneImageCache() {
+    const now = Date.now();
+    for (const [key, value] of this.imagePartsCache.entries()) {
+      if (value.expiresAt < now) {
+        this.imagePartsCache.delete(key);
+      }
+    }
+    if (this.imagePartsCache.size > 200) {
+      let removed = 0;
+      for (const key of this.imagePartsCache.keys()) {
+        this.imagePartsCache.delete(key);
+        removed += 1;
+        if (removed >= 50) break;
+      }
+    }
+  }
+
+  private getCachedImageParts(key: string) {
+    this.pruneImageCache();
+    const cached = this.imagePartsCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt < Date.now()) {
+      this.imagePartsCache.delete(key);
+      return null;
+    }
+    return cached;
+  }
+
+  private setCachedImageParts(
+    key: string,
+    parts: Array<any>,
+    raw?: string,
+  ) {
+    this.pruneImageCache();
+    this.imagePartsCache.set(key, {
+      parts,
+      raw,
+      expiresAt: Date.now() + this.imagePartsTtlMs,
+    });
   }
 
   private async downloadImageAsBase64(url: string) {
@@ -770,70 +1209,71 @@ export class AiService {
     apiKey?: string,
     model?: string,
   ) {
-    const tokens = parts
-      .flatMap((p) => [p.name, p.value, p.vietnameseName])
-      .filter(Boolean)
-      .map((t) => (t || '').toString().trim())
-      .filter((v, i, a) => a.indexOf(v) === i) // Unique
-      .slice(0, 20); // Limit to 20 unique tokens
-
-    if (!tokens.length) return [];
-
-    const ors = tokens.map((token) => {
-      const rx = this.buildAccentRegex(token);
-      return [
-        { name: rx },
-        { code: rx },
-        { category: rx },
-        { description: rx },
-      ];
-    });
-    const flatOr = ors.flat();
-    const products = await this.productModel
-      .find(flatOr.length ? { $or: flatOr } : {})
-      .select({
-        name: 1,
-        category: 1,
-        code: 1,
-        price: 1,
-        stock: 1,
-        images: 1,
-        description: 1,
-      })
-      .limit(60)
-      .lean()
-      .exec();
-
-    if (!products.length) return [];
-
-    // **Bước 3: Lọc qua AI để đảm bảo chỉ lấy linh kiện đúng/tương tự (không fallback bằng text)**
-    if (apiKey && model) {
-      try {
-        const filteredProducts = await this.filterProductsByAI(
-          parts,
-          products,
-          apiKey,
-          model,
+    const tokenSet = new Set<string>();
+    const valueSet = new Set<string>();
+    for (const part of parts || []) {
+      [part?.name, part?.vietnameseName, part?.value]
+        .filter(Boolean)
+        .forEach((t) => {
+          this.tokenize(String(t)).forEach((tk) => tokenSet.add(tk));
+        });
+      if (part?.value) {
+        this.extractValueTokens(String(part.value)).forEach((v) =>
+          valueSet.add(v),
         );
-        // Trả về đúng kết quả AI quyết định (kể cả rỗng)
-        return Array.isArray(filteredProducts) ? filteredProducts : [];
-      } catch (err) {
-        this.logger.warn('Error filtering products by AI', err);
-        // Khi AI lỗi, không trả về text-based fallback
-        return [];
       }
     }
 
-    // Nếu không có AI key/model, dùng kết quả tìm kiếm thô (đường lui khi dev)
-    return products.map((p) => ({
-      productId: p._id.toString(),
-      name: p.name,
-      price: p.price?.salePrice ?? p.price?.originalPrice ?? 0,
-      stock: typeof p.stock === 'number' ? p.stock : 0,
-      category: p.category,
-      code: p.code,
-      image: Array.isArray(p.images) ? p.images[0] : undefined,
+    const queryTokens = Array.from(tokenSet).slice(0, 12);
+    const valueTokens = Array.from(valueSet).slice(0, 12);
+    if (!queryTokens.length && !valueTokens.length) return [];
+
+    const index = await this.getProductIndex();
+    const scores = this.scoreProducts(index, queryTokens, valueTokens)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 60);
+    const confident = this.assessConfidence(scores, queryTokens, valueTokens);
+    const topScores = scores.slice(0, 20);
+
+    const deterministicCards = topScores.map((s) => ({
+      productId: s.product.productId,
+      name: s.product.name,
+      price: s.product.price,
+      stock: s.product.stock,
+      category: s.product.category,
+      code: s.product.code,
+      image: s.product.image,
     }));
+
+    if (confident || !apiKey || !model || !scores.length) {
+      return deterministicCards;
+    }
+
+    // Ambiguous: let AI filter a reduced candidate set
+    const aiCandidates = scores.slice(0, 40).map((s) => ({
+      _id: s.product.productId,
+      name: s.product.name,
+      code: s.product.code,
+      category: s.product.category,
+      description: s.product.description,
+      price: { salePrice: s.product.price, originalPrice: s.product.price },
+      stock: s.product.stock,
+      images: s.product.image ? [s.product.image] : [],
+    }));
+
+    try {
+      const filteredProducts = await this.filterProductsByAI(
+        parts,
+        aiCandidates,
+        apiKey,
+        model,
+      );
+      return Array.isArray(filteredProducts) ? filteredProducts : [];
+    } catch (err) {
+      this.logger.warn('Error filtering products by AI', err);
+      // Fallback only if deterministic looks confident; otherwise return empty for accuracy
+      return confident ? deterministicCards : [];
+    }
   }
 
   private async filterProductsByAI(
