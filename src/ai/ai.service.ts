@@ -16,7 +16,7 @@ import { OrdersService } from '../orders/orders.service';
 import { OrderDocument } from '../orders/schemas/order.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { UsersService } from '../users/users.service';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { AiChatDto } from './dto/ai-chat.dto';
 import { AiConfirmDto } from './dto/ai-confirm.dto';
 import { Buffer } from 'buffer';
@@ -168,10 +168,15 @@ export class AiService {
   private readonly pendingActions = new Map<string, PendingAction>();
   private readonly productIndexTtlMs = 2 * 60 * 1000; // 2 minutes
   private readonly imagePartsTtlMs = 10 * 60 * 1000; // 10 minutes
+  private readonly chatCacheTtlMs = 3 * 60 * 1000; // 3 minutes
   private productIndexCache?: { items: ProductIndexItem[]; expiresAt: number };
   private readonly imagePartsCache = new Map<
     string,
     { parts: Array<any>; raw?: string; expiresAt: number }
+  >();
+  private readonly chatCache = new Map<
+    string,
+    { value: { reply: string; cards?: AiProductCard[]; actions?: AiAction[] }; expiresAt: number }
   >();
 
   constructor(
@@ -197,6 +202,15 @@ export class AiService {
 
     const model = this.config.get<string>('GEMINI_MODEL') || 'gemini-1.5-flash';
     const intent = this.detectIntentFlags(dto.message);
+    const canCacheChat = !intent.wantsOrders && !intent.wantsAddresses;
+
+    if (canCacheChat) {
+      const cacheKey = this.buildChatCacheKey(dto, user.sub, model);
+      const cached = this.getChatCache(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
 
     // If image is provided, try vision flow first
     if (dto.imageUrl) {
@@ -223,9 +237,16 @@ export class AiService {
       const productCards = allCards.filter(
         (card) => card !== null,
       ) as AiProductCard[];
-      const reply = this.composeVisionReply(parts, productCards, raw);
+      const reply = this.sanitizeAiReply(
+        this.composeVisionReply(parts, productCards, raw),
+      );
       const actions = this.buildActions(dto.message, productCards, user.sub);
-      return { reply, cards: productCards, actions };
+      const result = { reply, cards: productCards, actions };
+      if (canCacheChat) {
+        const cacheKey = this.buildChatCacheKey(dto, user.sub, model);
+        this.setChatCache(cacheKey, result);
+      }
+      return result;
     }
 
     const {
@@ -247,7 +268,16 @@ export class AiService {
 
     if (deterministicReply && !intent.needsFreeform) {
       const actions = this.buildActions(dto.message, productCards, user.sub);
-      return { reply: deterministicReply, cards: productCards, actions };
+      const result = {
+        reply: this.sanitizeAiReply(deterministicReply),
+        cards: productCards,
+        actions,
+      };
+      if (canCacheChat) {
+        const cacheKey = this.buildChatCacheKey(dto, user.sub, model);
+        this.setChatCache(cacheKey, result);
+      }
+      return result;
     }
 
     let finalCards = productCards;
@@ -303,9 +333,15 @@ export class AiService {
       reply = rawReply.replace(/RELEVANT_CODES:.*(\n|$)/, '').trim();
     }
 
+    reply = this.sanitizeAiReply(reply);
     const actions = this.buildActions(dto.message, finalCards, user.sub);
 
-    return { reply, cards: finalCards, actions };
+    const result = { reply, cards: finalCards, actions };
+    if (canCacheChat) {
+      const cacheKey = this.buildChatCacheKey(dto, user.sub, model);
+      this.setChatCache(cacheKey, result);
+    }
+    return result;
   }
 
   async confirm(dto: AiConfirmDto, user: JwtPayload) {
@@ -373,10 +409,10 @@ export class AiService {
     return [
       'Bạn là trợ lý AI của ứng dụng bán linh kiện/điện tử.',
       'Luôn trả lời bằng tiếng Việt, rõ ràng, ngắn gọn theo dạng gợi ý hành động.',
-      'Chỉ sử dụng dữ liệu được cung cấp trong phần CONTEXT. Không bịa thông tin.',
+      'Ưu tiên dùng dữ liệu trong phần CONTEXT. Nếu CONTEXT không có thông tin liên quan, hãy trả lời bằng kiến thức phổ thông về điện tử một cách ngắn gọn, rõ ràng.',
       'Không yêu cầu/không lưu mật khẩu, OTP, token. Không tiết lộ khóa API.',
       'Không thực hiện hành động thay người dùng (tạo/hủy đơn, thanh toán). Chỉ hướng dẫn thao tác trong app.',
-      'ĐỊNH DẠNG BẮT BUỘC: viết thành các bullet ngắn gọn, không dùng ký tự * lặp nhiều lần; dùng dấu "-" đầu dòng. Nếu liệt kê sản phẩm, mỗi sản phẩm 1 dòng: "- Tên | Mã | Giá | Tồn kho". Nếu hướng dẫn, dùng 2-4 bullet ngắn. Không chèn dấu xuống dòng thừa.',
+      'ĐỊNH DẠNG BẮT BUỘC: viết thành các bullet ngắn gọn, không dùng Markdown/bôi đậm (tránh ký tự * hoặc **); dùng dấu "-" đầu dòng. Nếu liệt kê sản phẩm, mỗi sản phẩm 1 dòng: "- Tên | Mã | Giá | Tồn kho". Nếu hướng dẫn, dùng 2-4 bullet ngắn. Không chèn dấu xuống dòng thừa.',
       'Nếu chỉ có 1 sản phẩm gợi ý, hãy mở đầu bằng tiêu đề ngắn (vd: "Gợi ý sản phẩm") rồi xuống dòng và bullet chi tiết.',
       'CHỌN LỌC SẢN PHẨM: Nếu context có nhiều sản phẩm nhưng chỉ một số phù hợp với câu hỏi, chỉ trả lời về sản phẩm phù hợp. Cuối câu trả lời, hãy liệt kê mã sản phẩm (code) của những sản phẩm phù hợp nhất trong một dòng ẩn theo format: "RELEVANT_CODES: [CODE1, CODE2]". Nếu không có sản phẩm phù hợp, trả về "RELEVANT_CODES: []".',
       user?.role === 'admin'
@@ -402,6 +438,15 @@ export class AiService {
     const userParts = [{ text: dto.message }];
     contents.push({ role: 'user', parts: userParts });
     return contents;
+  }
+
+  private sanitizeAiReply(text: string) {
+    if (!text) return text;
+    return text
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/`{1,3}/g, '')
+      .trim();
   }
 
   private detectIntentFlags(message: string): IntentFlags {
@@ -1091,6 +1136,61 @@ export class AiService {
       parts,
       raw,
       expiresAt: Date.now() + this.imagePartsTtlMs,
+    });
+  }
+
+  private buildChatCacheKey(dto: AiChatDto, userId: string, model: string) {
+    const history = Array.isArray(dto.history) ? dto.history : [];
+    const payload = {
+      userId,
+      model,
+      message: dto.message || '',
+      imageUrl: dto.imageUrl || '',
+      history: history.map((h) => ({
+        role: h.role,
+        content: h.content,
+      })),
+    };
+    const raw = JSON.stringify(payload);
+    return createHash('sha256').update(raw).digest('hex');
+  }
+
+  private pruneChatCache() {
+    const now = Date.now();
+    for (const [key, value] of this.chatCache.entries()) {
+      if (value.expiresAt < now) {
+        this.chatCache.delete(key);
+      }
+    }
+    if (this.chatCache.size > 200) {
+      let removed = 0;
+      for (const key of this.chatCache.keys()) {
+        this.chatCache.delete(key);
+        removed += 1;
+        if (removed >= 50) break;
+      }
+    }
+  }
+
+  private getChatCache(key: string) {
+    this.pruneChatCache();
+    const cached = this.chatCache.get(key);
+    if (!cached) return null;
+    if (cached.expiresAt < Date.now()) {
+      this.chatCache.delete(key);
+      return null;
+    }
+    return cached.value;
+  }
+
+  private setChatCache(
+    key: string,
+    value: { reply: string; cards?: AiProductCard[]; actions?: AiAction[] },
+  ) {
+    this.pruneChatCache();
+    this.chatCache.set(key, {
+      value,
+      expiresAt: Date.now() + this.chatCacheTtlMs,
     });
   }
 
