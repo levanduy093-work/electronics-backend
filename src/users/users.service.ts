@@ -384,6 +384,34 @@ export class UsersService {
     return this.userModel.findOne({ email }).lean();
   }
 
+  async findOrCreateSocialUser(data: {
+    email: string;
+    name: string;
+    avatar?: string;
+    provider: string;
+    providerId: string;
+  }) {
+    const existing = await this.userModel.findOne({ email: data.email }).lean();
+    if (existing) {
+      if (!existing.provider) {
+        await this.userModel.updateOne(
+          { _id: existing._id },
+          { provider: data.provider, providerId: data.providerId },
+        );
+      }
+      return this.toSafeUser(existing);
+    }
+
+    const created = await this.userModel.create({
+      name: data.name,
+      email: data.email,
+      avatar: data.avatar,
+      provider: data.provider,
+      providerId: data.providerId,
+    });
+    return this.toSafeUser(created.toObject());
+  }
+
   async comparePassword(user: Partial<User>, plain: string) {
     if (!user?.passwordHashed) {
       return false;

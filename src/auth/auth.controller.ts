@@ -10,6 +10,7 @@ import { RegisterOtpDto } from './dto/register-otp.dto';
 import { SendResetOtpDto } from './dto/send-reset-otp.dto';
 import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { SocialLoginDto } from './dto/social-login.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtPayload } from '../common/types/jwt-payload';
 import { SendChangePasswordOtpDto } from './dto/send-change-password-otp.dto';
@@ -45,6 +46,13 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60 } })
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Public()
+  @Post('social-login')
+  @Throttle({ default: { limit: 10, ttl: 60 } })
+  socialLogin(@Body() dto: SocialLoginDto) {
+    return this.authService.socialLogin(dto);
   }
 
   @Public()

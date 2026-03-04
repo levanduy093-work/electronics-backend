@@ -66,11 +66,17 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true })
   email: string;
 
-  @Prop({ required: true })
-  passwordHashed: string;
+  @Prop()
+  passwordHashed?: string;
 
   @Prop({ default: 'user' })
   role: string;
+
+  @Prop()
+  provider?: string;
+
+  @Prop()
+  providerId?: string;
 
   @Prop({ type: [String], default: [] })
   fcmTokens: string[];

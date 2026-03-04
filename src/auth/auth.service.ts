@@ -18,7 +18,9 @@ import { VerifyResetOtpDto } from './dto/verify-reset-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SendChangePasswordOtpDto } from './dto/send-change-password-otp.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { SocialLoginDto } from './dto/social-login.dto';
 import * as bcrypt from 'bcrypt';
+import * as admin from 'firebase-admin';
 import { JwtPayload } from '../common/types/jwt-payload';
 import { Logger } from '@nestjs/common';
 
@@ -157,6 +159,38 @@ export class AuthService {
   private toSafeUser(user: any) {
     const { passwordHashed, __v, ...safeUser } = user;
     return safeUser;
+  }
+
+  async socialLogin(dto: SocialLoginDto) {
+    let decodedToken: admin.auth.DecodedIdToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(dto.idToken);
+    } catch (error) {
+      this.logger.warn(`Firebase token verification failed: ${error}`);
+      throw new UnauthorizedException('Token xác thực không hợp lệ');
+    }
+
+    const email = decodedToken.email;
+    if (!email) {
+      throw new UnauthorizedException('Không thể lấy email từ tài khoản');
+    }
+
+    const name =
+      decodedToken.name || decodedToken.email?.split('@')[0] || 'User';
+    const avatar = decodedToken.picture || undefined;
+    const providerId = decodedToken.uid;
+
+    const user = await this.usersService.findOrCreateSocialUser({
+      email: email.toLowerCase(),
+      name,
+      avatar,
+      provider: dto.provider,
+      providerId,
+    });
+
+    const userId = (user as any)._id?.toString?.() ?? '';
+    const tokens = this.signTokens(userId, email, user.role);
+    return { user: this.toSafeUser(user), ...tokens };
   }
 
   async sendResetOtp(dto: SendResetOtpDto) {
