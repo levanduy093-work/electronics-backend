@@ -72,7 +72,7 @@ import { SearchTrendsModule } from './search-trends/search-trends.module';
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 100,
+        limit: 300,
       },
     ]),
     AuthModule,
