@@ -147,6 +147,44 @@ export class UsersController {
     return this.usersService.clearSearchHistory(user.sub);
   }
 
+  // AI Chat History
+  @Get('me/ai-chat-history')
+  getMyAiChatHistory(@CurrentUser() user: JwtPayload) {
+    return this.usersService.getAiChatHistory(user.sub);
+  }
+
+  @Post('me/ai-chat-history')
+  saveMyAiChatHistory(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { messages: any[] },
+  ) {
+    return this.usersService.saveAiChatHistory(user.sub, body?.messages || []);
+  }
+
+  @Delete('me/ai-chat-history')
+  clearMyAiChatHistory(@CurrentUser() user: JwtPayload) {
+    return this.usersService.clearAiChatHistory(user.sub);
+  }
+
+  // AI Chat Archives
+  @Get('me/ai-chat-archives')
+  getMyAiChatArchives(@CurrentUser() user: JwtPayload) {
+    return this.usersService.getAiChatArchives(user.sub);
+  }
+
+  @Post('me/ai-chat-archives')
+  saveMyAiChatArchives(
+    @CurrentUser() user: JwtPayload,
+    @Body() body: { archives: any[] },
+  ) {
+    return this.usersService.saveAiChatArchives(user.sub, body?.archives || []);
+  }
+
+  @Delete('me/ai-chat-archives')
+  clearMyAiChatArchives(@CurrentUser() user: JwtPayload) {
+    return this.usersService.clearAiChatArchives(user.sub);
+  }
+
   @Get('popular-searches')
   @Public() // Allow public access for trends
   getPopularSearches() {

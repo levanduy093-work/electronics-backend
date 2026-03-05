@@ -16,6 +16,9 @@ import { SearchTrendsService } from '../search-trends/search-trends.service';
 
 @Injectable()
 export class UsersService {
+  private readonly MAX_AI_CHAT_MESSAGES = 120;
+  private readonly MAX_AI_CHAT_ARCHIVES = 50;
+
   constructor(
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
@@ -310,6 +313,81 @@ export class UsersService {
     return { success: true };
   }
 
+  async getAiChatHistory(userId: string) {
+    const user = await this.userModel.findById(userId).lean();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const raw = (user as any).aiChatHistory;
+    return {
+      messages: Array.isArray(raw) ? raw : [],
+      updatedAt: (user as any).updatedAt,
+    };
+  }
+
+  async saveAiChatHistory(userId: string, messages: any[]) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const sanitized = this.sanitizeAiChatMessages(messages);
+    (user as any).aiChatHistory = sanitized;
+    await user.save();
+
+    return {
+      messages: (user as any).aiChatHistory || [],
+      updatedAt: (user as any).updatedAt,
+    };
+  }
+
+  async clearAiChatHistory(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    (user as any).aiChatHistory = [];
+    await user.save();
+    return { success: true };
+  }
+
+  async getAiChatArchives(userId: string) {
+    const user = await this.userModel.findById(userId).lean();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const raw = (user as any).aiChatArchives;
+    return {
+      archives: Array.isArray(raw) ? raw : [],
+      updatedAt: (user as any).updatedAt,
+    };
+  }
+
+  async saveAiChatArchives(userId: string, archives: any[]) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    (user as any).aiChatArchives = this.sanitizeAiChatArchives(archives);
+    await user.save();
+
+    return {
+      archives: (user as any).aiChatArchives || [],
+      updatedAt: (user as any).updatedAt,
+    };
+  }
+
+  async clearAiChatArchives(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    (user as any).aiChatArchives = [];
+    await user.save();
+    return { success: true };
+  }
+
   // Simple in-memory cache for popular searches
   private popularSearchesCache: string[] | null = null;
   private lastCacheTime = 0;
@@ -447,5 +525,59 @@ export class UsersService {
       return bcrypt.hash(password, 10);
     }
     throw new BadRequestException('Password is required');
+  }
+
+  private sanitizeAiChatMessages(messages: any[]) {
+    if (!Array.isArray(messages)) return [];
+
+    const safe = messages
+      .filter((m) => m && (m.role === 'user' || m.role === 'ai'))
+      .map((m) => {
+        const parsedTime = m.timestamp ? new Date(m.timestamp) : new Date();
+        const timestamp = Number.isNaN(parsedTime.getTime())
+          ? new Date().toISOString()
+          : parsedTime.toISOString();
+        return {
+          id: String(m.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+          role: m.role,
+          content: String(m.content || '').slice(0, 4000),
+          timestamp,
+          type: m.type ? String(m.type).slice(0, 32) : 'text',
+          metadata: m.metadata ?? undefined,
+          cards: Array.isArray(m.cards) ? m.cards : undefined,
+          orderCards: Array.isArray(m.orderCards) ? m.orderCards : undefined,
+          addressCards: Array.isArray(m.addressCards) ? m.addressCards : undefined,
+          actions: Array.isArray(m.actions) ? m.actions : undefined,
+        };
+      })
+      .slice(-this.MAX_AI_CHAT_MESSAGES);
+
+    return safe;
+  }
+
+  private sanitizeAiChatArchives(archives: any[]) {
+    if (!Array.isArray(archives)) return [];
+
+    return archives
+      .filter((a) => a && Array.isArray(a.messages))
+      .map((a) => {
+        const createdAtDate = a.createdAt ? new Date(a.createdAt) : new Date();
+        const updatedAtDate = a.updatedAt ? new Date(a.updatedAt) : new Date();
+        const createdAt = Number.isNaN(createdAtDate.getTime())
+          ? new Date().toISOString()
+          : createdAtDate.toISOString();
+        const updatedAt = Number.isNaN(updatedAtDate.getTime())
+          ? new Date().toISOString()
+          : updatedAtDate.toISOString();
+
+        return {
+          id: String(a.id || `arc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+          title: String(a.title || 'Chat').slice(0, 120),
+          createdAt,
+          updatedAt,
+          messages: this.sanitizeAiChatMessages(a.messages || []),
+        };
+      })
+      .slice(0, this.MAX_AI_CHAT_ARCHIVES);
   }
 }

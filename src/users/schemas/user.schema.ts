@@ -92,6 +92,40 @@ export class User {
 
   @Prop({ type: [String], default: [] })
   searchHistory: string[];
+
+  @Prop({ type: [MongooseSchema.Types.Mixed], default: [] })
+  aiChatHistory: Array<{
+    id: string;
+    role: 'user' | 'ai';
+    content: string;
+    timestamp: string;
+    type?: string;
+    metadata?: any;
+    cards?: any[];
+    orderCards?: any[];
+    addressCards?: any[];
+    actions?: any[];
+  }>;
+
+  @Prop({ type: [MongooseSchema.Types.Mixed], default: [] })
+  aiChatArchives: Array<{
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    messages: Array<{
+      id: string;
+      role: 'user' | 'ai';
+      content: string;
+      timestamp: string;
+      type?: string;
+      metadata?: any;
+      cards?: any[];
+      orderCards?: any[];
+      addressCards?: any[];
+      actions?: any[];
+    }>;
+  }>;
 }
 
 export type UserDocument = HydratedDocument<User>;
