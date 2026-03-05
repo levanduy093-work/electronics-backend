@@ -28,20 +28,12 @@ export class DbChangeListener implements OnModuleInit, OnModuleDestroy {
 
       this.changeStream.on('change', (change) => {
         const payload: any = change as any;
-        const fullDocument = payload.fullDocument;
-        const sanitized =
-          payload.ns?.coll === 'users' && fullDocument
-            ? (() => {
-                const { passwordHashed, __v, ...rest } = fullDocument;
-                return rest;
-              })()
-            : fullDocument;
-        // Emit sự kiện chung kèm collection và loại thao tác
-        this.eventsGateway.server.emit('db_change', {
+        // Emit tối thiểu metadata cho admin, tránh phát tán fullDocument nhạy cảm
+        this.eventsGateway.emitDbChange({
           collection: payload.ns?.coll,
           operationType: payload.operationType,
           documentId: payload.documentKey?._id,
-          fullDocument: sanitized,
+          changedAt: new Date().toISOString(),
         });
       });
 

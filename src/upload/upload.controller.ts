@@ -3,6 +3,7 @@ import {
   Post,
   UploadedFile,
   UseInterceptors,
+  UseGuards,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
@@ -12,6 +13,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { UploadImageByUrlDto } from './dto/upload-by-url.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 const sanitizeFolder = (value?: string) => {
   if (!value) return undefined;
@@ -21,6 +23,7 @@ const sanitizeFolder = (value?: string) => {
 };
 
 @Controller('upload')
+@UseGuards(JwtAuthGuard)
 export class UploadController {
   constructor(private readonly cloudinaryService: CloudinaryService) {}
 
