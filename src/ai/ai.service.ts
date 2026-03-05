@@ -820,7 +820,11 @@ export class AiService {
 
     if (input.intent.wantsOrders) {
       if (input.orderLines.length) {
-        lines.push('Đơn hàng gần đây của bạn (xem thẻ bên dưới).');
+        if (input.orderLines.length === 1) {
+          lines.push('Đây là đơn hàng gần nhất của bạn (xem thẻ bên dưới).');
+        } else {
+          lines.push(`Đây là ${input.orderLines.length} đơn hàng gần đây của bạn (xem thẻ bên dưới).`);
+        }
       } else {
         lines.push('Bạn chưa có đơn hàng nào.');
       }
@@ -881,6 +885,7 @@ export class AiService {
     let productSearchMeta: ProductSearchMeta | null = null;
 
     if (intent.wantsOrders) {
+      const orderLimit = this.resolveOrderListLimit(message);
       const orders = await this.ordersService.findAll(user);
       const latest = [...(orders as OrderContext[])]
         .sort((a, b) => {
@@ -892,7 +897,7 @@ export class AiService {
           ).getTime();
           return atB - atA;
         })
-        .slice(0, 5);
+        .slice(0, orderLimit);
       const orderLineItems = latest.map((o) => {
         const code = o?.code || (o?._id ? String(o._id as any) : '');
         const cancelled = o?.isCancelled ? ' (ĐÃ HỦY)' : '';
@@ -926,7 +931,7 @@ export class AiService {
 
       parts.push(
         [
-          'ĐƠN HÀNG GẦN ĐÂY (tối đa 5):',
+          `ĐƠN HÀNG GẦN ĐÂY (tối đa ${orderLimit}):`,
           ...(orderLines.length ? orderLines : ['- Bạn chưa có đơn hàng nào.']),
         ].join('\n'),
       );
@@ -1936,6 +1941,56 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
     if (!match) return null;
     const qty = Number(match[1]);
     return Number.isFinite(qty) ? qty : null;
+  }
+
+  private extractVietnameseNumberWord(value: string) {
+    const map: Record<string, number> = {
+      mot: 1,
+      hai: 2,
+      ba: 3,
+      bon: 4,
+      tu: 4,
+      nam: 5,
+      sau: 6,
+      bay: 7,
+      tam: 8,
+      chin: 9,
+      muoi: 10,
+    };
+    return map[value] ?? null;
+  }
+
+  private resolveOrderListLimit(message: string) {
+    const normalized = this.normalizeText(message);
+    const latestSignal = /(don\s*hang|order).*(gan\s*nhat|moi\s*nhat)|(gan\s*nhat|moi\s*nhat).*(don\s*hang|order)/.test(
+      normalized,
+    );
+    const recentSignal = /(don\s*hang|order).*(gan\s*day)|(gan\s*day).*(don\s*hang|order)/.test(
+      normalized,
+    );
+
+    const numberMatch =
+      normalized.match(/(?:top|xem|lay|cho|hien|hien thi)?\s*(\d{1,2})\s*(?:don\s*hang|don|order)/) ||
+      normalized.match(/(?:don\s*hang|don|order)\s*(?:gan\s*day|moi\s*nhat|gan\s*nhat)?\s*(\d{1,2})/);
+    const wordMatch = normalized.match(
+      /(?:top|xem|lay|cho|hien|hien thi)?\s*(mot|hai|ba|bon|tu|nam|sau|bay|tam|chin|muoi)\s*(?:don\s*hang|don|order)/,
+    );
+
+    let requested: number | null = null;
+    if (numberMatch?.[1]) {
+      const parsed = Number(numberMatch[1]);
+      requested = Number.isFinite(parsed) ? parsed : null;
+    } else if (wordMatch?.[1]) {
+      requested = this.extractVietnameseNumberWord(wordMatch[1]);
+    }
+
+    if (requested && requested > 0) {
+      return Math.max(1, Math.min(20, requested));
+    }
+
+    if (latestSignal) return 1;
+    if (recentSignal) return 5;
+    return 5;
   }
 
   private createPendingAction(userId: string, action: AiAction): AiAction {
