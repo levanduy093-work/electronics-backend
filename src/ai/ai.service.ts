@@ -19,7 +19,6 @@ import { UsersService } from '../users/users.service';
 import { createHash, randomUUID } from 'crypto';
 import { AiChatDto } from './dto/ai-chat.dto';
 import { AiConfirmDto } from './dto/ai-confirm.dto';
-import { Buffer } from 'buffer';
 
 // Types for order context (lean query result)
 interface OrderContext {
@@ -34,6 +33,10 @@ interface OrderContext {
   totalPrice?: number;
   payment?: string;
   paymentStatus?: string;
+  items?: Array<{
+    name?: string;
+    quantity?: number;
+  }>;
 }
 
 // Types for address context
@@ -93,7 +96,12 @@ type GroqChatCompletionsRequest = {
   model: string;
   messages: Array<{
     role: 'system' | 'user' | 'assistant';
-    content: string;
+    content:
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'image_url'; image_url: { url: string } }
+        >;
   }>;
   temperature?: number;
   max_tokens?: number;
@@ -131,6 +139,8 @@ type AiOrderCard = {
   payment?: string;
   paymentStatus?: string;
   orderedAt?: string;
+  itemCount?: number;
+  itemPreviewNames?: string[];
   shipped: boolean;
   isCancelled?: boolean;
 };
@@ -204,11 +214,29 @@ type IntentFlags = {
   wantsAddresses: boolean;
   wantsProducts: boolean;
   needsFreeform: boolean;
+  asksBuildOrBomQuestion: boolean;
 };
 
 type IntentLabel = 'KNOWLEDGE' | 'SHOPPING' | 'MIXED' | 'ORDER' | 'ADDRESS';
 
 type PreferredLanguage = 'vi' | 'en';
+
+type NormalizedPart = {
+  kind:
+    | 'diode'
+    | 'bridge_rectifier'
+    | 'transformer'
+    | 'capacitor'
+    | 'regulator'
+    | 'resistor'
+    | 'pcb'
+    | 'wire'
+    | 'other';
+  name?: string;
+  vietnameseName?: string;
+  value?: string;
+  count: number;
+};
 
 @Injectable()
 export class AiService {
@@ -301,6 +329,13 @@ export class AiService {
       model,
       apiKey,
     );
+    if (intent.asksBuildOrBomQuestion) {
+      intent = {
+        ...intent,
+        wantsProducts: true,
+        needsFreeform: false,
+      };
+    }
     const canCacheChat = !intent.wantsOrders && !intent.wantsAddresses;
 
     if (canCacheChat) {
@@ -315,11 +350,69 @@ export class AiService {
       }
     }
 
-    // Groq text models in this integration do not support the existing image flow.
     if (dto.imageUrl) {
-      throw new ServiceUnavailableException(
-        'Tính năng phân tích ảnh đang tạm tắt sau khi chuyển sang Groq. Vui lòng gửi câu hỏi dạng text.',
+      const imageCacheKey = this.buildImageCacheKey(dto.imageUrl, safeDto.message);
+      const cachedImage = this.getCachedImageParts(imageCacheKey);
+      let parsedParts: Array<{
+        name?: string;
+        value?: string;
+        package?: string;
+        notes?: string;
+        vietnameseName?: string;
+      }> = [];
+      let rawVisionOutput = '';
+
+      if (cachedImage) {
+        parsedParts = cachedImage.parts || [];
+        rawVisionOutput = cachedImage.raw || '';
+      } else {
+        const visionModels = this.resolveVisionModelCandidates();
+        if (!visionModels.length) {
+          throw new ServiceUnavailableException(
+            'Thiếu model vision. Vui lòng cấu hình GROQ_MODEL_VISION.',
+          );
+        }
+
+        const extracted = await this.extractPartsFromImage(
+          safeDto.message,
+          dto.imageUrl,
+          apiKey,
+          visionModels,
+        );
+        parsedParts = extracted.parts || [];
+        rawVisionOutput = extracted.raw || '';
+        this.setCachedImageParts(imageCacheKey, parsedParts, rawVisionOutput);
+      }
+
+      const foundCardsRaw = await this.searchProductsByParts(
+        parsedParts,
+        apiKey,
+        model,
       );
+      const foundCards = foundCardsRaw.filter(Boolean) as AiProductCard[];
+      const missingParts = this.computeMissingParts(parsedParts, foundCards);
+      const reply = this.composeImageInventoryReply(
+        parsedParts,
+        foundCards,
+        missingParts,
+        rawVisionOutput,
+      );
+      const actions = this.buildActions(safeDto.message, foundCards, user.sub);
+      const result = {
+        reply: this.sanitizeAiReply(reply),
+        cards: foundCards,
+        actions,
+      };
+
+      if (canCacheChat) {
+        const cacheKey = this.buildChatCacheKey(
+          safeDto,
+          user.sub,
+          modelCandidates.join('|'),
+        );
+        this.setChatCache(cacheKey, result);
+      }
+      return result;
     }
 
     const {
@@ -330,6 +423,7 @@ export class AiService {
       productSearchMeta,
       orderLines,
       addressLines,
+      bomSummary,
     } = await this.buildContext(safeDto.message, user, intent);
 
     const deterministicReply = this.buildDeterministicReply({
@@ -339,6 +433,7 @@ export class AiService {
       productSearchMeta,
       orderLines,
       addressLines,
+      bomSummary,
     });
 
     if (deterministicReply && !intent.needsFreeform) {
@@ -355,6 +450,13 @@ export class AiService {
             model,
             apiKey,
           ),
+        );
+      }
+      if (!intent.asksBuildOrBomQuestion) {
+        finalReply = this.appendBomAvailabilitySection(
+          finalReply,
+          bomSummary,
+          productCards,
         );
       }
       const result = {
@@ -447,6 +549,7 @@ export class AiService {
         ),
       );
     }
+    reply = this.appendBomAvailabilitySection(reply, bomSummary, finalCards);
     const actions = this.buildActions(safeDto.message, finalCards, user.sub);
 
     const result = { reply, cards: finalCards, actions };
@@ -655,7 +758,7 @@ export class AiService {
           normalizedMessage,
         );
     const asksBuildOrBomQuestion =
-      /(can\s*(nhung\s*)?linh\s*kien\s*gi|gom\s*(nhung\s*)?gi|bao\s*gom\s*gi|mach\s*.*\s*can\s*gi|thiet\s*ke\s*mach|so\s*do\s*mach|nguyen\s*ly)/.test(
+      /(can\s*(nhung\s*)?linh\s*kien\s*gi|gom\s*(nhung\s*)?gi|bao\s*gom\s*gi|mach\s*.*\s*can\s*gi|thiet\s*ke\s*mach|so\s*do\s*mach|nguyen\s*ly|du\s*an|lam\s*du\s*an|muon\s*lam|mua\s*gi\s*de\s*lam|can\s*gi\s*de\s*lam|build|prototype|project)/.test(
         normalizedMessage,
       );
     const hasShoppingSignals =
@@ -664,6 +767,13 @@ export class AiService {
       );
     const hasExplicitOrderSignals =
       /don\s*hang|don\s*mua|lich\s*su\s*mua|order|tracking|ma\s*don|huy\s*don|trang\s*thai\s*don|cancel/.test(
+        normalizedMessage,
+      );
+    const asksOrderItems =
+      /(don\s*hang|order).*(mua\s*gi|da\s*mua\s*gi|mua\s*nhung\s*gi|gom\s*(nhung\s*)?gi|bao\s*gom\s*gi|co\s*(nhung\s*)?san\s*pham\s*nao)/.test(
+        normalizedMessage,
+      ) ||
+      /(mua\s*gi|da\s*mua\s*gi|mua\s*nhung\s*gi).*(don\s*hang|order)/.test(
         normalizedMessage,
       );
     const hasShippingOrderSignals =
@@ -681,14 +791,27 @@ export class AiService {
         (!asksProtocolConcept &&
           !asksBuildOrBomQuestion &&
           queryTokens.length <= 5));
+    if (asksBuildOrBomQuestion) {
+      wantsProducts = true;
+    }
     let needsFreeform =
       asksProtocolConcept ||
-      asksBuildOrBomQuestion ||
       /tai\s*sao|vi\s*sao|so\s*sanh|khac\s*nhau|nen\s*chon|tu\s*van|huong\s*dan|cach\s*lam|la\s*gi|thi\s*sao|la\s*sao|dung\s*de|nguyen\s*ly|co\s*phai|thong\s*so|how\s*to|why|compare|recommend|advisor|guide/.test(
         normalizedMessage,
       ) || (message || '').length > 350;
 
+    // Build/BOM queries are handled deterministically with AI part extraction in buildContext.
+    if (asksBuildOrBomQuestion) {
+      needsFreeform = false;
+    }
+
     // Intent precedence:
+    // If user asks what products were bought in order(s), treat as order intent only.
+    if (wantsOrders && asksOrderItems) {
+      wantsProducts = false;
+      needsFreeform = false;
+    }
+
     // If the user asks about orders, avoid mixing product suggestions unless shopping is explicit.
     if (wantsOrders && !hasShoppingSignals && !asksBuildOrBomQuestion) {
       wantsProducts = false;
@@ -707,6 +830,7 @@ export class AiService {
       wantsAddresses,
       wantsProducts,
       needsFreeform,
+      asksBuildOrBomQuestion,
     };
   }
 
@@ -815,6 +939,10 @@ export class AiService {
     productSearchMeta: ProductSearchMeta | null;
     orderLines: string[];
     addressLines: string[];
+    bomSummary?: {
+      requiredParts: string[];
+      missingParts: string[];
+    } | null;
   }) {
     const lines: string[] = [];
 
@@ -839,6 +967,39 @@ export class AiService {
     }
 
     if (input.intent.wantsProducts) {
+      if (input.intent.asksBuildOrBomQuestion) {
+        lines.push('Linh kiện cần cho mạch:');
+        if (input.bomSummary?.requiredParts?.length) {
+          lines.push(
+            ...input.bomSummary.requiredParts
+              .slice(0, 10)
+              .map((part) => `- ${part}`),
+          );
+        } else {
+          lines.push('- Chưa xác định rõ từ mô tả, vui lòng nêu rõ điện áp/dòng tải.');
+        }
+        if (input.productCards.length) {
+          lines.push(
+            input.productCards.length === 1
+              ? 'Sản phẩm đang có: 1 món (xem thẻ bên dưới).'
+              : `Sản phẩm đang có: ${input.productCards.length} món (xem thẻ bên dưới).`,
+          );
+        } else {
+          lines.push('Sản phẩm đang có: chưa tìm thấy món phù hợp.');
+        }
+        lines.push('Còn thiếu:');
+        if (input.bomSummary?.missingParts?.length) {
+          lines.push(
+            ...input.bomSummary.missingParts
+              .slice(0, 10)
+              .map((part) => `- ${part}`),
+          );
+        } else {
+          lines.push('- Chưa phát hiện thiếu linh kiện cốt lõi.');
+        }
+        return lines.join('\n');
+      }
+
       if (input.productCards.length) {
         lines.push(
           input.productCards.length === 1
@@ -875,6 +1036,10 @@ export class AiService {
     productSearchMeta: ProductSearchMeta | null;
     orderLines: string[];
     addressLines: string[];
+    bomSummary: {
+      requiredParts: string[];
+      missingParts: string[];
+    } | null;
   }> {
     const parts: string[] = [];
     const productCards: AiProductCard[] = [];
@@ -883,6 +1048,8 @@ export class AiService {
     const orderLines: string[] = [];
     const addressLines: string[] = [];
     let productSearchMeta: ProductSearchMeta | null = null;
+    let bomSummary: { requiredParts: string[]; missingParts: string[] } | null =
+      null;
 
     if (intent.wantsOrders) {
       const orderLimit = this.resolveOrderListLimit(message);
@@ -914,6 +1081,14 @@ export class AiService {
       orderCards.push(
         ...latest.map((o) => {
           const orderedAtRaw = o?.createdAt || o?.status?.ordered;
+          const itemCount = (o?.items || []).reduce(
+            (sum, item) => sum + (Number(item?.quantity) || 1),
+            0,
+          );
+          const itemPreviewNames = (o?.items || [])
+            .map((item) => (item?.name || '').trim())
+            .filter(Boolean)
+            .slice(0, 2);
           return {
             orderId: String(o?._id || o?.code || ''),
             code: o?.code || String(o?._id || ''),
@@ -923,6 +1098,8 @@ export class AiService {
             orderedAt: orderedAtRaw
               ? new Date(orderedAtRaw).toISOString()
               : undefined,
+            itemCount,
+            itemPreviewNames,
             shipped: Boolean(o?.status?.shipped),
             isCancelled: Boolean(o?.isCancelled),
           };
@@ -990,17 +1167,75 @@ export class AiService {
     }
 
     if (intent.wantsProducts) {
-      const search = await this.searchProductsDeterministic(message);
-      productCards.push(...search.cards);
-      productSearchMeta = search.meta;
+      if (intent.asksBuildOrBomQuestion) {
+        const modelCandidates = this.resolveModelCandidates();
+        const model = modelCandidates[0];
+        const apiKey = this.config.get<string>('GROQ_API_KEY');
+        const extractedParts =
+          model && apiKey
+            ? await this.extractPartsFromText(message, model, apiKey)
+            : [];
 
-      if (search.contextLines.length) {
-        parts.push(
-          [
-            'SẢN PHẨM LIÊN QUAN (tối đa 30):',
-            ...search.contextLines,
-          ].join('\n'),
-        );
+        if (extractedParts.length) {
+          const cards = await this.searchProductsByParts(
+            extractedParts,
+            apiKey,
+            model,
+          );
+          const validCards = cards.filter(Boolean) as AiProductCard[];
+          productCards.push(...validCards);
+          const missingParts = this.computeMissingParts(
+            extractedParts,
+            validCards,
+          );
+          bomSummary = {
+            requiredParts: extractedParts
+              .map((p) => this.formatPartLabel(p))
+              .filter(Boolean) as string[],
+            missingParts,
+          };
+
+          parts.push(
+            [
+              'DANH SÁCH LINH KIỆN MẠCH (trích xuất từ yêu cầu):',
+              ...bomSummary.requiredParts.map((label) => `- ${label}`),
+            ].join('\n'),
+          );
+
+          if (missingParts.length) {
+            parts.push(
+              [
+                'LINH KIỆN CÒN THIẾU TRONG KHO:',
+                ...missingParts.map((label) => `- ${label}`),
+              ].join('\n'),
+            );
+          }
+        } else {
+          const search = await this.searchProductsDeterministic(message);
+          productCards.push(...search.cards);
+          productSearchMeta = search.meta;
+          if (search.contextLines.length) {
+            parts.push(
+              [
+                'SẢN PHẨM LIÊN QUAN (tối đa 30):',
+                ...search.contextLines,
+              ].join('\n'),
+            );
+          }
+        }
+      } else {
+        const search = await this.searchProductsDeterministic(message);
+        productCards.push(...search.cards);
+        productSearchMeta = search.meta;
+
+        if (search.contextLines.length) {
+          parts.push(
+            [
+              'SẢN PHẨM LIÊN QUAN (tối đa 30):',
+              ...search.contextLines,
+            ].join('\n'),
+          );
+        }
       }
     }
 
@@ -1012,7 +1247,282 @@ export class AiService {
       productSearchMeta,
       orderLines,
       addressLines,
+      bomSummary,
     };
+  }
+
+  private formatPartLabel(part: {
+    name?: string;
+    vietnameseName?: string;
+    value?: string;
+    count?: number;
+  }) {
+    const base = part.vietnameseName || part.name || '';
+    const value = part.value || '';
+    const countSuffix =
+      typeof part.count === 'number' && part.count > 1 ? ` x${part.count}` : '';
+    return `${[base, value].filter(Boolean).join(' - ').trim()}${countSuffix}`.trim();
+  }
+
+  private computeMissingParts(
+    parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
+    products: AiProductCard[],
+  ) {
+    const normalizedParts = this.normalizeImageParts(parts);
+    if (!normalizedParts.length) return [];
+
+    const missing: string[] = [];
+    for (const part of normalizedParts) {
+      const profile = this.getPartSearchProfile(part);
+      const matched = products.some((product) => {
+        const productText = this.normalizeForSearch(
+          [product.name, product.category, product.code].filter(Boolean).join(' '),
+        );
+        if (
+          profile.excludeTokens.some((token) =>
+            productText.includes(this.normalizeForSearch(token)),
+          )
+        ) {
+          return false;
+        }
+        if (profile.categoryHints.length) {
+          const catOk = profile.categoryHints.some((hint) =>
+            productText.includes(this.normalizeForSearch(hint)),
+          );
+          if (!catOk) return false;
+        }
+        const tokenOk = profile.labelTokens.some((token) =>
+          productText.includes(this.normalizeForSearch(token)),
+        );
+        if (!tokenOk) return false;
+        if (!profile.valueTokens.length) return true;
+        const prodValueTokens = this.extractValueTokens(productText);
+        return profile.valueTokens.some((v) => prodValueTokens.includes(v));
+      });
+
+      if (!matched) {
+        const label = this.formatPartLabel(part);
+        if (label && !missing.includes(label)) missing.push(label);
+      }
+    }
+
+    return missing.slice(0, 12);
+  }
+
+  private async extractPartsFromText(
+    message: string,
+    model: string,
+    apiKey: string,
+  ) {
+    const prompt = [
+      'Bạn là kỹ sư điện tử, hãy trích xuất BOM tối thiểu từ yêu cầu mạch của người dùng.',
+      'Trả về JSON ARRAY, mỗi phần tử có dạng:',
+      '{ "name": "Tên hoặc mã linh kiện", "vietnameseName": "Tên tiếng Việt", "value": "Giá trị/định mức nếu có" }',
+      'Quy tắc:',
+      '- Chỉ trả về JSON array thuần, không giải thích.',
+      '- Ưu tiên linh kiện cốt lõi để mạch hoạt động.',
+      '- Gộp các phần tử trùng loại; có thể ghi value dạng khoảng nếu chưa rõ.',
+      `User message: "${message}"`,
+    ].join('\n');
+
+    const requestBody: GeminiGenerateContentRequest = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 1200,
+      },
+    };
+
+    const raw = await this.callGemini(model, apiKey, requestBody);
+    return this.parsePartsFromResponse(raw);
+  }
+
+  private normalizeImageParts(
+    parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
+  ): NormalizedPart[] {
+    const result = new Map<string, NormalizedPart>();
+    const ignored = new Set(['load', 'tai', 'output', 'input', 'vsec', 'ac input']);
+
+    for (const part of parts || []) {
+      const rawName = (part.name || part.vietnameseName || '').trim();
+      const normalizedRaw = this.normalizeForSearch(rawName);
+      if (!normalizedRaw) continue;
+      if (ignored.has(normalizedRaw)) continue;
+
+      const kind = this.classifyPartKind(part);
+      if (kind === 'other' && normalizedRaw.length <= 2) continue;
+      if (kind === 'other' && /(node|nut|point|a|b|c|d)$/i.test(rawName)) continue;
+
+      const cleaned: NormalizedPart = {
+        kind,
+        name: part.name,
+        vietnameseName: part.vietnameseName,
+        value: part.value,
+        count: 1,
+      };
+      const key = `${kind}::${this.normalizeForSearch(cleaned.value || '')}`;
+      const existed = result.get(key);
+      if (existed) {
+        existed.count += 1;
+      } else {
+        result.set(key, cleaned);
+      }
+    }
+
+    return Array.from(result.values()).slice(0, 20);
+  }
+
+  private classifyPartKind(part: {
+    name?: string;
+    value?: string;
+    vietnameseName?: string;
+  }): NormalizedPart['kind'] {
+    const text = this.normalizeForSearch(
+      `${part.name || ''} ${part.vietnameseName || ''} ${part.value || ''}`,
+    );
+    if (/bridge|cau\s*diode|rectifier/.test(text)) return 'bridge_rectifier';
+    if (/diode|1n400|1n58|d\d+/.test(text)) return 'diode';
+    if (/bien\s*ap|transformer|220v|12vac|9vac/.test(text)) return 'transformer';
+    if (/capacitor|tu\s*dien|u?f|nf|pf/.test(text)) return 'capacitor';
+    if (/7805|lm7805|regulator|on\s*ap|ic\s*on\s*ap/.test(text))
+      return 'regulator';
+    if (/resistor|dien\s*tro|ohm|k$/.test(text)) return 'resistor';
+    if (/pcb|board|mach\s*in/.test(text)) return 'pcb';
+    if (/wire|day|cable|jack|connector/.test(text)) return 'wire';
+    return 'other';
+  }
+
+  private getPartSearchProfile(part: NormalizedPart) {
+    const baseLabel = [
+      part.name || '',
+      part.vietnameseName || '',
+      part.kind.replace(/_/g, ' '),
+    ]
+      .join(' ')
+      .trim();
+    const labelTokens = this.tokenize(baseLabel);
+    const valueTokens = this.extractValueTokens(part.value || '');
+
+    const categoryHints: string[] = [];
+    const excludeTokens = ['sensor', 'cam bien', 'buck', 'boost', 'module'];
+    switch (part.kind) {
+      case 'diode':
+        categoryHints.push('diode', 'chinh luu');
+        break;
+      case 'bridge_rectifier':
+        categoryHints.push('bridge rectifier', 'cau diode', 'rectifier');
+        break;
+      case 'transformer':
+        categoryHints.push('transformer', 'bien ap');
+        break;
+      case 'capacitor':
+        categoryHints.push('capacitor', 'tu dien');
+        break;
+      case 'regulator':
+        categoryHints.push('regulator', '7805', 'on ap');
+        break;
+      case 'resistor':
+        categoryHints.push('resistor', 'dien tro');
+        break;
+      case 'pcb':
+        categoryHints.push('pcb', 'board');
+        break;
+      case 'wire':
+        categoryHints.push('wire', 'day', 'cable', 'connector');
+        break;
+      default:
+        break;
+    }
+
+    return {
+      labelTokens: Array.from(new Set(labelTokens)).slice(0, 10),
+      valueTokens: Array.from(new Set(valueTokens)).slice(0, 8),
+      categoryHints,
+      excludeTokens,
+    };
+  }
+
+  private composeImageInventoryReply(
+    parts: Array<{
+      name?: string;
+      value?: string;
+      package?: string;
+      notes?: string;
+      vietnameseName?: string;
+    }>,
+    products: AiProductCard[],
+    missingParts: string[],
+    raw?: string,
+  ) {
+    const lines: string[] = [];
+    const normalizedParts = this.normalizeImageParts(parts);
+
+    lines.push('Linh kiện nhận diện từ ảnh:');
+    if (normalizedParts.length) {
+      lines.push(
+        ...normalizedParts
+          .slice(0, 12)
+          .map((p) => `- ${this.formatPartLabel(p) || 'Linh kiện chưa rõ tên'}`),
+      );
+    } else {
+      lines.push('- Không nhận diện được linh kiện rõ ràng.');
+      if (raw) {
+        lines.push('- Vui lòng gửi ảnh rõ hơn hoặc ảnh cận linh kiện.');
+      }
+    }
+
+    if (products.length) {
+      lines.push(
+        products.length === 1
+          ? 'Sản phẩm hệ thống đang có: 1 món (xem thẻ bên dưới).'
+          : `Sản phẩm hệ thống đang có: ${products.length} món (xem thẻ bên dưới).`,
+      );
+    } else {
+      lines.push('Sản phẩm hệ thống đang có: chưa tìm thấy món phù hợp.');
+    }
+
+    lines.push('Còn thiếu:');
+    if (missingParts.length) {
+      lines.push(...missingParts.slice(0, 12).map((p) => `- ${p}`));
+    } else {
+      lines.push('- Chưa phát hiện thiếu linh kiện cốt lõi.');
+    }
+
+    return lines.join('\n');
+  }
+
+  private appendBomAvailabilitySection(
+    reply: string,
+    bomSummary: { requiredParts: string[]; missingParts: string[] } | null,
+    cards: AiProductCard[],
+  ) {
+    if (!bomSummary) return reply;
+
+    const availableLines = (cards || [])
+      .slice(0, 8)
+      .map((p) => `- ${p.name}${p.code ? ` (${p.code})` : ''}`);
+
+    const missingLines = (bomSummary.missingParts || [])
+      .slice(0, 8)
+      .map((m) => `- ${m}`);
+
+    const sections: string[] = [];
+    if (availableLines.length) {
+      sections.push('Sản phẩm hệ thống đang có:');
+      sections.push(...availableLines);
+    } else {
+      sections.push('Sản phẩm hệ thống đang có:');
+      sections.push('- Chưa tìm thấy sản phẩm phù hợp trong kho.');
+    }
+
+    sections.push('Linh kiện còn thiếu:');
+    if (missingLines.length) {
+      sections.push(...missingLines);
+    } else {
+      sections.push('- Hiện chưa phát hiện thiếu linh kiện cốt lõi.');
+    }
+
+    return `${(reply || '').trim()}\n\n${sections.join('\n')}`.trim();
   }
 
   private extractKeywords(text: string) {
@@ -1578,26 +2088,12 @@ export class AiService {
     });
   }
 
-  private async downloadImageAsBase64(url: string) {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new BadRequestException('Không tải được ảnh để phân tích');
-    }
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
-    const buffer = Buffer.from(await response.arrayBuffer());
-    return {
-      base64: buffer.toString('base64'),
-      mimeType: contentType.split(';')[0] || 'image/jpeg',
-    };
-  }
-
   private async extractPartsFromImage(
     message: string,
     imageUrl: string,
     apiKey: string,
-    model: string,
+    models: string[],
   ) {
-    const image = await this.downloadImageAsBase64(imageUrl);
     const prompt = [
       'Bạn là chuyên gia về mạch điện tử. Hãy phân tích ảnh (schematic hoặc linh kiện thực tế) và trích xuất danh sách linh kiện.',
       'Yêu cầu: Trả về 1 mảng JSON thuần gồm các object có cấu trúc:',
@@ -1609,30 +2105,31 @@ export class AiService {
       '4. CHỈ TRẢ VỀ JSON ARRAY. Không giải thích.',
       `Context thêm từ user: "${message || ''}"`,
     ].join('\n');
+    let lastError: unknown = null;
 
-    const requestBody: GeminiGenerateContentRequest = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: image.mimeType,
-                data: image.base64,
-              },
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 2000,
-      },
-    };
+    for (let i = 0; i < models.length; i += 1) {
+      const model = models[i];
+      try {
+        const raw = await this.callGroqVisionOnce(
+          model,
+          apiKey,
+          prompt,
+          imageUrl,
+        );
+        return { parts: this.parsePartsFromResponse(raw), raw };
+      } catch (error) {
+        lastError = error;
+        const canFallback =
+          i < models.length - 1 && this.shouldFallbackError(error);
+        if (canFallback) continue;
+        break;
+      }
+    }
 
-    const raw = await this.callGemini(model, apiKey, requestBody);
-    return { parts: this.parsePartsFromResponse(raw), raw };
+    const finalMessage =
+      (lastError as Error | null)?.message ||
+      'Không thể phân tích ảnh với Groq Vision.';
+    throw new ServiceUnavailableException(finalMessage);
   }
 
   private parsePartsFromResponse(raw: string) {
@@ -1693,71 +2190,91 @@ export class AiService {
     apiKey?: string,
     model?: string,
   ) {
-    const tokenSet = new Set<string>();
-    const valueSet = new Set<string>();
-    for (const part of parts || []) {
-      [part?.name, part?.vietnameseName, part?.value]
+    const normalizedParts = this.normalizeImageParts(parts);
+    if (!normalizedParts.length) return [];
+
+    const index = await this.getProductIndex();
+    const selected: AiProductCard[] = [];
+    const selectedSet = new Set<string>();
+
+    for (const part of normalizedParts) {
+      const profile = this.getPartSearchProfile(part);
+      const scored = index
+        .map((product) => {
+          const text = this.normalizeForSearch(
+            [
+              product.name,
+              product.category,
+              product.code,
+              product.description,
+            ]
+              .filter(Boolean)
+              .join(' '),
+          );
+
+          if (
+            profile.excludeTokens.some((token) =>
+              text.includes(this.normalizeForSearch(token)),
+            )
+          ) {
+            return null;
+          }
+
+          if (profile.categoryHints.length) {
+            const catOk = profile.categoryHints.some((hint) =>
+              text.includes(this.normalizeForSearch(hint)),
+            );
+            if (!catOk) return null;
+          }
+
+          const tokenHits = profile.labelTokens.filter((token) =>
+            text.includes(this.normalizeForSearch(token)),
+          ).length;
+          if (!tokenHits && part.kind !== 'other') return null;
+
+          const prodValueTokens = this.extractValueTokens(text);
+          const valueHits = profile.valueTokens.filter((v) =>
+            prodValueTokens.includes(v),
+          ).length;
+
+          let score = tokenHits * 35 + valueHits * 90;
+          if (
+            part.kind === 'diode' &&
+            /(1n4001|1n4002|1n4003|1n4004|1n4005|1n4006|1n4007)/.test(text)
+          ) {
+            score += 80;
+          }
+          if (part.kind === 'regulator' && /(7805|lm7805)/.test(text)) {
+            score += 80;
+          }
+          if (part.kind === 'transformer' && /(12v|12vac|9v|9vac)/.test(text)) {
+            score += 60;
+          }
+
+          if (score <= 0) return null;
+          return { product, score };
+        })
         .filter(Boolean)
-        .forEach((t) => {
-          this.tokenize(String(t)).forEach((tk) => tokenSet.add(tk));
+        .sort((a, b) => (b?.score || 0) - (a?.score || 0))
+        .slice(0, 2);
+
+      for (const row of scored) {
+        if (!row) continue;
+        if (selectedSet.has(row.product.productId)) continue;
+        selectedSet.add(row.product.productId);
+        selected.push({
+          productId: row.product.productId,
+          name: row.product.name,
+          price: row.product.price,
+          stock: row.product.stock,
+          category: row.product.category,
+          code: row.product.code,
+          image: row.product.image,
         });
-      if (part?.value) {
-        this.extractValueTokens(String(part.value)).forEach((v) =>
-          valueSet.add(v),
-        );
       }
     }
 
-    const queryTokens = Array.from(tokenSet).slice(0, 12);
-    const valueTokens = Array.from(valueSet).slice(0, 12);
-    if (!queryTokens.length && !valueTokens.length) return [];
-
-    const index = await this.getProductIndex();
-    const scores = this.scoreProducts(index, queryTokens, valueTokens)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 60);
-    const confident = this.assessConfidence(scores, queryTokens, valueTokens);
-    const topScores = scores.slice(0, 20);
-
-    const deterministicCards = topScores.map((s) => ({
-      productId: s.product.productId,
-      name: s.product.name,
-      price: s.product.price,
-      stock: s.product.stock,
-      category: s.product.category,
-      code: s.product.code,
-      image: s.product.image,
-    }));
-
-    if (confident || !apiKey || !model || !scores.length) {
-      return deterministicCards;
-    }
-
-    // Ambiguous: let AI filter a reduced candidate set
-    const aiCandidates = scores.slice(0, 40).map((s) => ({
-      _id: s.product.productId,
-      name: s.product.name,
-      code: s.product.code,
-      category: s.product.category,
-      description: s.product.description,
-      price: { salePrice: s.product.price, originalPrice: s.product.price },
-      stock: s.product.stock,
-      images: s.product.image ? [s.product.image] : [],
-    }));
-
-    try {
-      const filteredProducts = await this.filterProductsByAI(
-        parts,
-        aiCandidates,
-        apiKey,
-        model,
-      );
-      return Array.isArray(filteredProducts) ? filteredProducts : [];
-    } catch (err) {
-      this.logger.warn('Error filtering products by AI', err);
-      // Fallback only if deterministic looks confident; otherwise return empty for accuracy
-      return confident ? deterministicCards : [];
-    }
+    return selected.slice(0, 10);
   }
 
   private async filterProductsByAI(
@@ -2077,6 +2594,24 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
     return deduped;
   }
 
+  private resolveVisionModelCandidates() {
+    const configured = [
+      this.config.get<string>('GROQ_MODEL_VISION'),
+      this.config.get<string>('GROQ_MODEL_IMAGE'),
+      this.config.get<string>('GROQ_MODEL_PRIMARY'),
+      this.config.get<string>('GROQ_MODEL'),
+      this.config.get<string>('GROQ_MODEL_SECONDARY'),
+    ]
+      .map((v) => (v || '').trim())
+      .filter(Boolean);
+
+    const deduped: string[] = [];
+    for (const model of configured) {
+      if (!deduped.includes(model)) deduped.push(model);
+    }
+    return deduped;
+  }
+
   private getGroqTimeoutMs() {
     const configured = Number(this.config.get<string>('GROQ_REQUEST_TIMEOUT_MS'));
     if (!Number.isFinite(configured)) return 6000;
@@ -2200,7 +2735,7 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
   ) {
     if (this.hasInlineData(body)) {
       throw new ServiceUnavailableException(
-        'Model Groq hiện không hỗ trợ payload ảnh trong luồng này.',
+        'Groq text flow không hỗ trợ inline ảnh. Dùng imageUrl qua luồng vision.',
       );
     }
 
@@ -2231,5 +2766,81 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
     throw new ServiceUnavailableException(
       `AI tạm thời quá tải sau khi thử ${models.length} model: ${finalMessage}`,
     );
+  }
+
+  private async callGroqVisionOnce(
+    model: string,
+    apiKey: string,
+    prompt: string,
+    imageUrl: string,
+  ) {
+    const requestBody: GroqChatCompletionsRequest = {
+      model,
+      temperature: 0.2,
+      max_tokens: 2000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.getGroqTimeoutMs());
+
+    try {
+      const response = await fetch(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        },
+      );
+
+      const data = (await response
+        .json()
+        .catch(() => ({}))) as GroqChatCompletionsResponse;
+
+      if (!response.ok) {
+        const err = new Error(
+          data?.error?.message || `Groq vision request failed (${response.status})`,
+        ) as LlmCallError;
+        err.status = response.status;
+        err.retriable = [408, 425, 429, 500, 502, 503, 504].includes(
+          response.status,
+        );
+        err.model = model;
+        throw err;
+      }
+
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content || !content.trim()) {
+        const err = new Error('Groq vision trả về nội dung rỗng') as LlmCallError;
+        err.retriable = true;
+        err.model = model;
+        throw err;
+      }
+
+      return content;
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        const err = new Error('Groq vision timeout') as LlmCallError;
+        err.retriable = true;
+        err.model = model;
+        throw err;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }

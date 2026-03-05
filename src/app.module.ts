@@ -60,6 +60,8 @@ import { SearchTrendsModule } from './search-trends/search-trends.module';
         GROQ_MODEL_PRIMARY: Joi.string().optional(),
         GROQ_MODEL_SECONDARY: Joi.string().optional(),
         GROQ_MODEL_TERTIARY: Joi.string().optional(),
+        GROQ_MODEL_VISION: Joi.string().optional(),
+        GROQ_MODEL_IMAGE: Joi.string().optional(),
         GROQ_REQUEST_TIMEOUT_MS: Joi.number().optional(),
       }),
     }),
