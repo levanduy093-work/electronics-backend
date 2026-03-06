@@ -1,235 +1,293 @@
-# Electronics Backend
+# electronics-backend
 
-## Mô tả
+Backend API cho hệ thống Electronics Shop, xây bằng **NestJS + MongoDB (Mongoose)**, phục vụ cả Mobile App (`ElectronicsShop`) và Admin Web (`electronics-admin`).
 
-Đây là máy chủ backend cho ứng dụng Cửa hàng Điện tử (Electronics Shop). Dự án được xây dựng bằng **NestJS**, một framework Node.js tiến bộ, và sử dụng **MongoDB** làm cơ sở dữ liệu. Hệ thống cung cấp một tập hợp các API toàn diện để quản lý sản phẩm, đơn hàng, người dùng, kho hàng, xử lý thanh toán và nhiều hơn nữa.
+## 1. Tổng quan
 
-## Tính năng chính
+- Kiến trúc module theo domain: `auth`, `products`, `orders`, `users`, `payments`, `ai`, ...
+- Mặc định API được bảo vệ bằng JWT (global `JwtAuthGuard`), chỉ các route gắn `@Public()` mới mở công khai.
+- Có phân quyền theo vai trò với `@Roles('admin')`.
+- Có realtime `socket.io` để emit `db_change` cho admin đã xác thực.
+- Có tích hợp AI chat qua **Groq API** (text + vision), hỗ trợ tư vấn sản phẩm, đọc ảnh linh kiện/schematic, và action xác nhận thêm giỏ hàng.
 
-- **Xác thực & Phân quyền**: Xác thực dựa trên JWT với kiểm soát truy cập dựa trên vai trò (Admin, User).
-- **Đăng nhập xã hội (Social Login)**: Đăng nhập bằng Google và Apple thông qua Firebase Authentication, backend xác thực ID token bằng Firebase Admin SDK và phát hành JWT nội bộ.
-- **Quản lý sản phẩm**: Các thao tác CRUD cho sản phẩm, danh mục và kho hàng.
-- **Xử lý đơn hàng**: Quản lý toàn bộ vòng đời đơn hàng (đặt hàng, theo dõi, hủy đơn).
-- **Tích hợp thanh toán**: Tích hợp với VNPay để thanh toán trực tuyến an toàn.
-- **Quản lý người dùng**: Hồ sơ người dùng, quản lý địa chỉ và cài đặt tài khoản.
-- **Quản lý kho**: Theo dõi biến động kho, mức tồn kho và các lô hàng.
-- **Cập nhật thời gian thực**: Sử dụng Socket.io cho thông báo và cập nhật theo thời gian thực.
-- **Tải lên hình ảnh**: Tích hợp Cloudinary để lưu trữ và quản lý hình ảnh hiệu quả.
-- **Tích hợp AI**: Tích hợp Google Gemini AI cho các tính năng thông minh (ví dụ: trò chuyện, gợi ý).
-- **Thông báo**: Thông báo hệ thống và thông báo mục tiêu (thông qua Firebase).
-- **Đánh giá & Xếp hạng**: Hệ thống đánh giá sản phẩm.
+## 2. Tech stack
 
-## Công nghệ sử dụng
+- `NestJS 11`, `TypeScript`
+- `MongoDB + Mongoose`
+- `JWT + Passport`
+- `Socket.IO`
+- `Cloudinary` (upload ảnh/file)
+- `Firebase Admin SDK` (social login verify + push notifications)
+- `VNPay` (online payment)
+- `Groq API` (LLM text + vision)
 
-- **Framework**: [NestJS](https://nestjs.com/)
-- **Ngôn ngữ**: TypeScript
-- **Cơ sở dữ liệu**: [MongoDB](https://www.mongodb.com/) (sử dụng Mongoose)
-- **Validation**: Joi, class-validator
-- **Bảo mật**: Helmet, Bcrypt, Passport
-- **Real-time**: Socket.io
-- **Lưu trữ đám mây**: Cloudinary
-- **Cổng thanh toán**: VNPay
-- **AI**: Google Gemini
-- **Push Notifications**: Firebase Admin
-
-## Kiến trúc tổng quan hệ thống
-
-Sơ đồ dưới đây mô tả kiến trúc tổng thể giữa Mobile App, Admin, Backend và các dịch vụ bên ngoài:
+## 3. Kiến trúc hệ thống
 
 ```mermaid
 flowchart LR
-    subgraph Clients [Clients]
-      A[Mobile App - ElectroAI]
-      B[Admin Web - electronics-admin]
-    end
+  subgraph Clients
+    M[ElectronicsShop Mobile]
+    A[electronics-admin]
+  end
 
-    subgraph Backend [electronics-backend (NestJS)]
-      C[REST API / WebSocket]
-      D[Auth & Social Login<br/>JWT, Google, Apple]
-      E[Orders, Products, Inventory,...]
-      F[AI Service<br/>Gemini]
-    end
+  subgraph BE[electronics-backend]
+    API[REST API]
+    WS[Socket Gateway]
+    AI[AI Service]
+  end
 
-    subgraph Infra [External Services]
-      G[(MongoDB Replica Set)]
-      H[Cloudinary<br/>Image Storage]
-      I[VNPay<br/>Payment Gateway]
-      J[Firebase Admin<br/>FCM, Token Verify]
-      K[Google Gemini API]
-    end
+  subgraph External
+    DB[(MongoDB)]
+    CR[Cloudinary]
+    FB[Firebase Admin]
+    VNP[VNPay]
+    GQ[Groq API]
+  end
 
-    A --> C
-    B --> C
-
-    C --> D
-    C --> E
-    C --> F
-
-    D --> J
-    E --> G
-    E --> I
-    E --> H
-    F --> K
+  M --> API
+  A --> API
+  A --> WS
+  API --> DB
+  API --> CR
+  API --> FB
+  API --> VNP
+  API --> AI
+  AI --> GQ
+  WS --> A
 ```
 
-## Yêu cầu tiên quyết
+## 4. Module chính
 
-Trước khi chạy dự án này, hãy đảm bảo bạn đã cài đặt những thứ sau:
-
-- **Node.js**: (Phiên bản khuyến nghị: 18.x trở lên)
-- **npm**: (Trình quản lý gói Node)
-- **MongoDB**: Bạn có thể sử dụng instance cục bộ hoặc giải pháp đám mây như MongoDB Atlas.
-
-## Cài đặt
-
-1.  **Clone repository:**
-    ```bash
-    git clone <repository-url>
-    cd electronics-backend
-    ```
-
-2.  **Cài đặt dependencies:**
-    ```bash
-    npm install
-    ```
-
-3.  **Cấu hình môi trường:**
-    Tạo một file `.env` trong thư mục gốc. Bạn có thể bắt đầu bằng cách sao chép file mẫu:
-    ```bash
-    cp .env.example .env
-    ```
-    Cập nhật file `.env` với các giá trị cấu hình cụ thể của bạn:
-    
-    ```env
-    MONGO_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<dbname>
-    JWT_SECRET=your_jwt_secret_key
-    REFRESH_SECRET=your_refresh_secret_key
-    PORT=3000
-    CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-    
-    # Cấu hình SMTP (cho email)
-    SMTP_HOST=smtp.example.com
-    SMTP_PORT=587
-    SMTP_USER=your_email@example.com
-    SMTP_PASS=your_email_password
-    SMTP_FROM="Electronics Shop <no-reply@example.com>"
-    
-    # Thanh toán (VNPay)
-    VNP_TMN_CODE=your_vnp_tmn_code
-    VNP_HASH_SECRET=your_vnp_hash_secret
-    VNP_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
-    VNP_RETURN_URL=http://localhost:3000/payments/vnpay_return
-    
-    # Cloudinary
-    CLOUDINARY_CLOUD_NAME=your_cloud_name
-    CLOUDINARY_API_KEY=your_api_key
-    CLOUDINARY_API_SECRET=your_api_secret
-
-    # Gemini AI
-    GEMINI_API_KEY=your_gemini_api_key
-    GEMINI_MODEL=gemini-pro
-    
-    # Firebase Admin (Social Login Google / Apple)
-    # Backend sẽ đọc file serviceAccountKey.json trong thư mục gốc (KHÔNG commit file này lên git)
-    ```
-
-    > **Lưu ý:** Để phục vụ mục đích kiểm thử hoặc nếu bạn cần file `.env` cụ thể, vui lòng liên hệ:
-    > - **Zalo**: 0827733475
-    > - **Email**: levanduy.work@gmail.com
-
-## Chạy ứng dụng
-
-### Môi trường phát triển (Development)
-```bash
-npm run start
+```text
+src/
+├── ai/                    # Chat AI, vision, action confirmation
+├── auth/                  # Login/register/refresh/OTP/social login
+├── banners/
+├── carts/
+├── cloudinary/
+├── common/                # guards/decorators/firebase/strategies
+├── events/                # socket gateway + Mongo change stream listener
+├── health/
+├── inventory-movements/
+├── notifications/
+├── orders/
+├── payments/              # VNPay create/return/ipn
+├── products/
+├── reviews/
+├── search-trends/
+├── shipments/
+├── transactions/
+├── upload/
+├── users/
+└── vouchers/
 ```
 
-### Chế độ theo dõi (Watch Mode)
+## 5. Bảo mật và quyền truy cập
+
+- Global guards trong `AppModule`:
+  - `ThrottlerGuard`
+  - `JwtAuthGuard`
+  - `RolesGuard`
+- Quy tắc mặc định:
+  - Không có `@Public()` => bắt buộc JWT.
+  - Có `@Roles('admin')` => bắt buộc role admin.
+- Socket `db_change` chỉ emit tới room `admin` (client socket có JWT role admin).
+
+## 6. Biến môi trường
+
+Tạo `.env` từ `.env.example`:
+
 ```bash
+cp .env.example .env
+```
+
+Biến quan trọng:
+
+- `MONGO_URI` (bắt buộc)
+- `JWT_SECRET` (bắt buộc, tối thiểu 32 ký tự)
+- `REFRESH_SECRET` (bắt buộc, tối thiểu 32 ký tự)
+- `PORT` (mặc định 3000)
+- `CORS_ORIGINS` (danh sách URL, phân tách bằng dấu phẩy)
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` (OTP email)
+- `VNP_TMN_CODE`, `VNP_HASH_SECRET`, `VNP_URL`, `VNP_RETURN_URL`, `VNP_IPN_URL` (VNPay)
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- `GROQ_API_KEY` (AI)
+- `GROQ_MODEL`, `GROQ_MODEL_PRIMARY`, `GROQ_MODEL_SECONDARY`, `GROQ_MODEL_TERTIARY`
+- `GROQ_MODEL_VISION` hoặc `GROQ_MODEL_IMAGE` (AI ảnh)
+- `GROQ_REQUEST_TIMEOUT_MS` (timeout gọi Groq)
+- `FIREBASE_SERVICE_ACCOUNT_PATH` (tuỳ chọn; nếu không có sẽ thử `serviceAccountKey.json` ở root)
+
+Lưu ý:
+- Nếu thiếu key Firebase, hệ thống vẫn chạy nhưng push notification/social verify có thể không hoạt động đầy đủ.
+- MongoDB change stream cần replica set/sharded cluster để realtime ổn định.
+
+## 7. Cài đặt và chạy
+
+```bash
+cd electronics-backend
+npm install
 npm run start:dev
 ```
 
-### Môi trường sản xuất (Production Mode)
-```bash
-npm run start:prod
+Các script:
+
+- `npm run build`
+- `npm run start`
+- `npm run start:dev`
+- `npm run start:prod`
+- `npm run lint`
+- `npm run test`
+- `npm run test:e2e`
+- `npm run test:cov`
+
+## 8. Realtime db_change (admin)
+
+Backend lắng nghe Mongo change stream toàn DB rồi emit metadata tối thiểu:
+
+```json
+{
+  "collection": "orders",
+  "operationType": "update",
+  "documentId": "...",
+  "changedAt": "...ISO8601..."
+}
 ```
 
-## Luồng đăng nhập xã hội (Google / Apple)
+```mermaid
+flowchart TD
+  A[MongoDB change stream] --> B[DbChangeListener]
+  B --> C[EventsGateway.emitDbChange]
+  C --> D{Socket user role = admin?}
+  D -->|Yes| E[Emit event db_change]
+  D -->|No| F[Không nhận event]
+```
+
+## 9. Chat AI (phần chính)
+
+### 9.1 Endpoint
+
+- `POST /ai/chat` (JWT required)
+- `POST /ai/confirm` (JWT required)
+
+### 9.2 Request `POST /ai/chat`
+
+```json
+{
+  "message": "Tư vấn diode 1A",
+  "history": [
+    { "role": "user", "content": "Xin chào" },
+    { "role": "ai", "content": "Mình có thể giúp gì?" }
+  ],
+  "imageUrl": "https://...optional..."
+}
+```
+
+### 9.3 Response điển hình
+
+```json
+{
+  "reply": "- Gợi ý 2 mã phù hợp...",
+  "cards": [
+    {
+      "productId": "...",
+      "name": "Diode 1N4007",
+      "price": 1000,
+      "stock": 120,
+      "image": "https://...",
+      "category": "Diode",
+      "code": "1N4007"
+    }
+  ],
+  "orderCards": [],
+  "addressCards": [],
+  "actions": [
+    {
+      "type": "ADD_TO_CART",
+      "payload": { "productId": "...", "quantity": 1 },
+      "requiresConfirmation": true,
+      "confirmationId": "uuid"
+    }
+  ]
+}
+```
+
+### 9.4 Lưu đồ Chat AI (Text)
+
+```mermaid
+flowchart TD
+  A[POST /ai/chat] --> B[JwtAuthGuard + user.sub]
+  B --> C[Check config GROQ_API_KEY + model]
+  C --> D[Sanitize message/history]
+  D --> E{Sensitive exfiltration?}
+  E -->|Yes| R1[Trả về reply từ chối an toàn]
+  E -->|No| F[Detect/refine intent]
+  F --> G{Có imageUrl?}
+
+  G -->|No| H[Build context: products/orders/addresses]
+  H --> I{Deterministic reply đủ tốt?}
+  I -->|Yes| J[Build actions + cache]
+  I -->|No| K[Call Groq text với fallback model]
+  K --> L[Sanitize reply + append BOM/missing]
+  L --> J
+  J --> Z[Return reply/cards/orderCards/addressCards/actions]
+
+  G -->|Yes| V1[Groq vision: extract parts từ ảnh]
+  V1 --> V2[Match parts với inventory products]
+  V2 --> V3[Compose reply có missing parts]
+  V3 --> V4[Build actions + cache]
+  V4 --> Z
+```
+
+### 9.5 Lưu đồ xác nhận action (Add to cart)
 
 ```mermaid
 sequenceDiagram
-    participant M as Mobile App
-    participant FB as Firebase Auth<br/>(Client SDK)
-    participant API as electronics-backend<br/>(/auth/social-login)
-    participant FA as Firebase Admin SDK
-    participant DB as MongoDB Users
+  participant U as Mobile User
+  participant API as /ai/chat
+  participant C as /ai/confirm
+  participant CART as CartsService
 
-    M->>FB: Đăng nhập Google/Apple<br/>(GoogleSignin / AppleAuth)
-    FB-->>M: Firebase ID Token
-    M->>API: POST /auth/social-login<br/>{ idToken, provider }
-    API->>FA: verifyIdToken(idToken)
-    FA-->>API: user info<br/>(uid, email, name, picture,...)
-    API->>DB: findOrCreateSocialUser(provider, uid, email,...)
-    DB-->>API: User (tạo mới hoặc cập nhật)
-    API-->>M: Access Token + Refresh Token<br/>+ user profile
-    M->>M: Lưu token & điều hướng vào app
+  U->>API: Nhắn "thêm vào giỏ"
+  API-->>U: actions[ADD_TO_CART, requiresConfirmation=true, confirmationId]
+  U->>C: POST /ai/confirm { confirmationId, productId?, quantity? }
+  C->>C: Check pendingActions (tồn tại, đúng user, chưa hết hạn)
+  C->>CART: addItemForUser(...)
+  CART-->>C: cart mới
+  C-->>U: "Đã thêm sản phẩm vào giỏ hàng"
 ```
 
-## Kiểm thử (Testing)
+### 9.6 Cơ chế AI đáng chú ý
 
-### Unit Tests
-```bash
-npm run test
-```
+- Chống prompt injection và exfiltration ở mức input filtering + policy prompt.
+- Fallback model Groq nhiều tầng khi model trước timeout/lỗi tạm thời.
+- Cache tạm cho chat, index sản phẩm, ảnh đã parse.
+- Hỗ trợ intent theo ngữ cảnh: hỏi sản phẩm, đơn hàng, địa chỉ, BOM/lắp mạch.
+- Khi có ý định thêm giỏ hàng, action cần `confirmationId` và hết hạn sau ~10 phút.
 
-### E2E Tests
-```bash
-npm run test:e2e
-```
+## 10. API nhóm chức năng (tóm tắt)
 
-### Test Coverage (Độ bao phủ)
-```bash
-npm run test:cov
-```
+- `auth`: login/register/refresh/otp/social-login
+- `products`: CRUD sản phẩm, public list/detail
+- `orders`, `shipments`, `transactions`, `inventory-movements`
+- `users`, `vouchers`, `reviews`, `banners`, `notifications`, `search-trends`
+- `upload`: upload image/file qua backend
+- `payments`: tạo payment VNPay + return/ipn callback
+- `health`: healthcheck
 
-## Cấu trúc dự án
+## 11. Tích hợp với frontend
 
-```
-src/
-├── ai/                 # Các module liên quan đến AI
-├── auth/               # Logic xác thực
-├── banners/            # Quản lý banner
-├── carts/              # Chức năng giỏ hàng
-├── cloudinary/         # Dịch vụ upload ảnh
-├── common/             # Tài nguyên chung (guards, decorators, filters)
-├── config/             # Các module cấu hình
-├── events/             # Xử lý sự kiện
-├── health/             # Endpoints kiểm tra sức khỏe hệ thống
-├── inventory-movements/ # Theo dõi kho hàng
-├── notifications/      # Hệ thống thông báo
-├── orders/             # Quản lý đơn hàng
-├── payments/           # Xử lý thanh toán
-├── products/           # Danh mục sản phẩm
-├── reviews/            # Đánh giá sản phẩm
-├── search-trends/      # Phân tích tìm kiếm
-├── shipments/          # Logic vận chuyển
-├── transactions/       # Ghi nhận giao dịch
-├── users/              # Quản lý người dùng
-├── vouchers/           # Mã giảm giá
-├── app.module.ts       # Module chính của ứng dụng
-└── main.ts             # Điểm khởi chạy ứng dụng
-```
+- Mobile App gọi `POST /ai/chat` và render `cards/orderCards/addressCards/actions`.
+- Khi user bấm action, Mobile gọi `POST /ai/confirm` để thực thi.
+- Admin Web kết nối socket để nhận `db_change` và refetch dữ liệu realtime.
 
-## Bảo mật & Môi trường
+## 12. Troubleshooting nhanh
 
-- **Không commit secrets**: Các file `.env` và `serviceAccountKey.json` đã được cấu hình trong `.gitignore` để **không bao giờ được đẩy lên repository**.
-- **Quản lý key**:
-  - Mọi giá trị nhạy cảm (DB URI, JWT secret, SMTP password, VNPay, Cloudinary, Gemini API key, Firebase service account, ...) đều phải được cấu hình qua `.env` hoặc file JSON riêng trên server.
-  - Nếu bạn clone dự án từ repository, hãy tự tạo `.env` và `serviceAccountKey.json` mới cho môi trường của bạn; **không sử dụng lại key thực tế trong ví dụ**.
-- **Social login**:
-  - Mobile app sẽ gửi **Firebase ID token** tới endpoint: `POST /auth/social-login` với `provider` là `google` hoặc `apple`.
-  - Backend sử dụng Firebase Admin để xác thực token này trước khi tạo/tìm user và phát hành JWT nội bộ.
+- `AI chưa được cấu hình`: kiểm tra `GROQ_API_KEY` và model env.
+- Không nhận `db_change`: kiểm tra Mongo replica set + socket token admin.
+- Lỗi CORS: kiểm tra `CORS_ORIGINS` (bao gồm cả mobile dev host/web host).
+- Lỗi JWT refresh: kiểm tra `JWT_SECRET` và `REFRESH_SECRET` nhất quán giữa các lần deploy.
+- VNPay callback không về app: kiểm tra `VNP_RETURN_URL`, deep link app và domain public.
 
-## Giấy phép (License)
+## 13. License
 
-Dự án này là [UNLICENSED](LICENSE).
+UNLICENSED.
