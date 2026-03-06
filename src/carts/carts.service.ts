@@ -95,7 +95,13 @@ export class CartsService {
     return stripDocument(doc);
   }
 
-  async addItemForUser(user: JwtPayload, productId: string, quantity: number) {
+  async addItemForUser(
+    user: JwtPayload,
+    productId: string,
+    quantity: number,
+    selectedOption?: string,
+    selectedClassification?: string,
+  ) {
     const product = await this.productModel.findById(productId).lean();
     if (!product) {
       throw new NotFoundException('Product not found');
@@ -110,10 +116,16 @@ export class CartsService {
     const finalQuantity = Math.min(safeQuantity, availableStock);
     const filter = { userId: new Types.ObjectId(user.sub) };
     const existing = await this.cartModel.findOne(filter).lean();
+    const normalizedOption = selectedOption?.trim() || undefined;
+    const normalizedClassification = selectedClassification?.trim() || undefined;
 
     const items = existing?.items?.length ? [...existing.items] : [];
     const existingIndex = items.findIndex(
-      (item) => item.productId && item.productId.toString() === productId,
+      (item) =>
+        item.productId &&
+        item.productId.toString() === productId &&
+        (item.selectedOption || undefined) === normalizedOption &&
+        (item.selectedClassification || undefined) === normalizedClassification,
     );
 
     const baseItem = {
@@ -123,6 +135,10 @@ export class CartsService {
       image: product.images?.[0],
       price: product.price?.salePrice ?? product.price?.originalPrice ?? 0,
       quantity: finalQuantity,
+      ...(normalizedOption ? { selectedOption: normalizedOption } : {}),
+      ...(normalizedClassification
+        ? { selectedClassification: normalizedClassification }
+        : {}),
     };
 
     if (existingIndex >= 0) {

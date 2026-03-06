@@ -1,4 +1,4 @@
-import { IsMongoId, IsNumber, Min } from 'class-validator';
+import { IsMongoId, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class AddCartItemDto {
   @IsMongoId()
@@ -7,4 +7,12 @@ export class AddCartItemDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @IsOptional()
+  @IsString()
+  selectedOption?: string;
+
+  @IsOptional()
+  @IsString()
+  selectedClassification?: string;
 }

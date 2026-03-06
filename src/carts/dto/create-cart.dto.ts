@@ -3,6 +3,7 @@ import {
   IsMongoId,
   IsNumber,
   IsOptional,
+  IsString,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -25,6 +26,14 @@ class CartItemDto {
 
   @IsOptional()
   image?: string;
+
+  @IsOptional()
+  @IsString()
+  selectedOption?: string;
+
+  @IsOptional()
+  @IsString()
+  selectedClassification?: string;
 }
 
 export class CreateCartDto {

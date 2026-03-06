@@ -20,6 +20,12 @@ class CartItem {
 
   @Prop({ required: true })
   quantity: number;
+
+  @Prop()
+  selectedOption?: string;
+
+  @Prop()
+  selectedClassification?: string;
 }
 
 @Schema({ collection: 'carts', timestamps: true })

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -27,8 +28,12 @@ export class OrdersController {
   }
 
   @Get()
-  findAll(@CurrentUser() user: JwtPayload) {
-    return this.ordersService.findAll(user);
+  findAll(
+    @CurrentUser() user: JwtPayload,
+    @Query('scope') scope?: 'mine' | 'all',
+  ) {
+    const resolvedScope: 'mine' | 'all' = scope === 'mine' ? 'mine' : 'all';
+    return this.ordersService.findAll(user, resolvedScope);
   }
 
   @Get(':id')

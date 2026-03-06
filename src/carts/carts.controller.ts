@@ -59,6 +59,12 @@ export class CartsController {
 
   @Post('items')
   addItem(@CurrentUser() user: JwtPayload, @Body() dto: AddCartItemDto) {
-    return this.cartsService.addItemForUser(user, dto.productId, dto.quantity);
+    return this.cartsService.addItemForUser(
+      user,
+      dto.productId,
+      dto.quantity,
+      dto.selectedOption,
+      dto.selectedClassification,
+    );
   }
 }

@@ -90,9 +90,12 @@ export class OrdersService {
     return createdObj;
   }
 
-  async findAll(user: JwtPayload) {
+  async findAll(user: JwtPayload, scope: 'mine' | 'all' = 'all') {
+    const forceMine = scope === 'mine';
     const filter =
-      user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+      forceMine || user.role !== 'admin'
+        ? { userId: new Types.ObjectId(user.sub) }
+        : {};
     const docs = await this.orderModel.find(filter).lean();
     // Đồng bộ giao dịch COD nếu bị thiếu (tránh mất transaction do client gửi chuỗi payment khác chuẩn)
     const codOrders = docs.filter((o) => this.isCodPayment(o.payment));
