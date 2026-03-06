@@ -264,6 +264,35 @@ sequenceDiagram
 - Hỗ trợ intent theo ngữ cảnh: hỏi sản phẩm, đơn hàng, địa chỉ, BOM/lắp mạch.
 - Khi có ý định thêm giỏ hàng, action cần `confirmationId` và hết hạn sau ~10 phút.
 
+### 9.7 Lưu đồ fallback giữa các model AI
+
+```mermaid
+flowchart TD
+  A[Bắt đầu gọi AI] --> B{Luồng nào?}
+  B -->|Text| C[resolveModelCandidates: PRIMARY -> MODEL -> SECONDARY -> TERTIARY -> default]
+  B -->|Vision| D[resolveVisionModelCandidates: VISION -> IMAGE -> PRIMARY -> MODEL -> SECONDARY]
+
+  C --> E[Thử model hiện tại]
+  D --> F[Thử vision model hiện tại]
+
+  E --> G{Request OK và có content?}
+  F --> H{Request OK và có content?}
+
+  G -->|Yes| Z[Trả kết quả]
+  H -->|Yes| Z
+
+  G -->|No| I{Lỗi retriable? 408/425/429/5xx/timeout}
+  H -->|No| J{Lỗi retriable? 408/425/429/5xx/timeout}
+
+  I -->|Yes + còn model kế| K[Warn log + backoff ngắn, chuyển model kế]
+  J -->|Yes + còn model kế| L[Warn log + chuyển vision model kế]
+  K --> E
+  L --> F
+
+  I -->|No hoặc hết model| M[Throw ServiceUnavailableException]
+  J -->|No hoặc hết model| N[Throw ServiceUnavailableException]
+```
+
 ## 10. API nhóm chức năng (tóm tắt)
 
 - `auth`: login/register/refresh/otp/social-login
