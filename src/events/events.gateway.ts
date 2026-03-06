@@ -36,12 +36,12 @@ export class EventsGateway
     const token = this.extractToken(client);
     if (token) {
       try {
-        const payload =
-          await this.jwtService.verifyAsync<JwtPayload>(token);
+        const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
         if (payload?.sub) {
           client.data.user = payload;
+          void client.join(`user:${payload.sub}`);
           if (payload.role === 'admin') {
-            client.join('admin');
+            void client.join('admin');
           }
         }
       } catch {
@@ -80,5 +80,17 @@ export class EventsGateway
     changedAt?: string;
   }) {
     this.server.to('admin').emit('db_change', payload);
+  }
+
+  emitToUser(userId: string, event: string, payload: Record<string, any> = {}) {
+    if (!userId) return;
+    this.server.to(`user:${userId}`).emit(event, payload);
+  }
+
+  emitCartUpdated(userId: string, payload: Record<string, any> = {}) {
+    this.emitToUser(userId, 'cart_updated', {
+      ...payload,
+      changedAt: payload.changedAt || new Date().toISOString(),
+    });
   }
 }

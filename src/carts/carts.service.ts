@@ -12,6 +12,7 @@ import { UpdateCartDto } from './dto/update-cart.dto';
 import { Cart, CartDocument } from './schemas/cart.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { stripDocument } from '../common/utils/strip-doc.util';
+import { EventsGateway } from '../events/events.gateway';
 
 @Injectable()
 export class CartsService {
@@ -20,6 +21,7 @@ export class CartsService {
     private readonly cartModel: Model<CartDocument>,
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async create(data: CreateCartDto, user: JwtPayload) {
@@ -37,12 +39,13 @@ export class CartsService {
       items,
       ...totals,
     });
+    this.emitCartChanged(user.sub, created._id?.toString(), 'create');
     return stripDocument(created.toObject());
   }
 
   async findAll(user: JwtPayload) {
-    const filter =
-      user.role === 'admin' ? {} : { userId: new Types.ObjectId(user.sub) };
+    // Cart is private per user; always scope by owner to avoid cross-account leakage.
+    const filter = { userId: new Types.ObjectId(user.sub) };
     const docs = await this.cartModel.find(filter).lean();
     return docs.map(stripDocument);
   }
@@ -79,6 +82,7 @@ export class CartsService {
       .findByIdAndUpdate(id, mapped, { new: true, lean: true })
       .exec();
     if (!doc) throw new NotFoundException('Cart not found');
+    this.emitCartChanged(doc.userId?.toString(), doc._id?.toString(), 'update');
     return stripDocument(doc);
   }
 
@@ -87,6 +91,7 @@ export class CartsService {
     if (!doc) throw new NotFoundException('Cart not found');
     this.ensureOwnerOrAdmin(doc.userId, user);
     await this.cartModel.findByIdAndDelete(id).lean();
+    this.emitCartChanged(doc.userId?.toString(), doc._id?.toString(), 'delete');
     return stripDocument(doc);
   }
 
@@ -149,7 +154,24 @@ export class CartsService {
     if (!updated) {
       throw new NotFoundException('Cart not found');
     }
+    this.emitCartChanged(user.sub, updated._id?.toString(), 'add_item');
     return stripDocument(updated);
+  }
+
+  private emitCartChanged(
+    userId?: string,
+    cartId?: string,
+    operationType?: string,
+  ) {
+    if (!userId) return;
+    try {
+      this.eventsGateway.emitCartUpdated(userId, {
+        cartId,
+        operationType: operationType || 'update',
+      });
+    } catch {
+      // Realtime notify must not break cart APIs
+    }
   }
 
   private ensureOwnerOrAdmin(
