@@ -172,46 +172,46 @@ flowchart TD
 ### Flow AI Chat (Text)
 ```mermaid
 flowchart TD
-  A[POST /ai/chat] --> B[Auth check]
-  B --> C[Sanitize input + detect language]
-  C --> D[Detect injection / exfiltration]
-  D -->|Sensitive| R1[Return safe reply]
-  D --> E[Detect intent]
-  E --> F[Build context: products/orders/addresses]
-  F --> G[Deterministic reply?]
-  G -->|Yes| H[Return reply + cards]
-  G -->|No| I[Call LLM (Groq)]
-  I --> J[Filter RELEVANT_CODES]
-  J --> K[Rewrite to preferred language]
-  K --> L[Append BOM availability]
-  L --> M[Build actions + cache]
-  M --> N[Return reply + cards + actions]
+  A["POST /ai/chat"] --> B["Auth check"]
+  B --> C["Sanitize input + detect language"]
+  C --> D["Detect injection / exfiltration"]
+  D -->|Sensitive| R1["Return safe reply"]
+  D --> E["Detect intent"]
+  E --> F["Build context: products/orders/addresses"]
+  F --> G["Deterministic reply?"]
+  G -->|Yes| H["Return reply + cards"]
+  G -->|No| I["Call LLM (Groq)"]
+  I --> J["Filter RELEVANT_CODES"]
+  J --> K["Rewrite to preferred language"]
+  K --> L["Append BOM availability"]
+  L --> M["Build actions + cache"]
+  M --> N["Return reply + cards + actions"]
 ```
 
 ### Flow AI Chat (Image / Vision)
 ```mermaid
 flowchart TD
-  A[Image URL in request] --> B[Check image cache]
-  B -->|Hit| C[Use cached parts]
-  B -->|Miss| D[Extract parts via Groq Vision]
-  D --> E[Parse JSON parts]
-  E --> F[Search products by parts]
-  F --> G[Compose reply + missing parts]
-  G --> H[Build actions]
-  H --> I[Return reply + cards + actions]
+  A["Image URL in request"] --> B["Check image cache"]
+  B -->|Hit| C["Use cached parts"]
+  B -->|Miss| D["Extract parts via Groq Vision"]
+  D --> E["Parse JSON parts"]
+  E --> F["Search products by parts"]
+  F --> G["Compose reply + missing parts"]
+  G --> H["Build actions"]
+  H --> I["Return reply + cards + actions"]
 ```
 
 ### Fallback flow giữa các model (Text)
 ```mermaid
 flowchart TD
-  A[resolveModelCandidates] --> B[Try model 1]
-  B -->|Success| Z[Return content]
-  B -->|Retriable error| C[Try model 2]
-  C -->|Retriable error| D[Try model 3]
-  D -->|Retriable error| E[Try model 4]
-  E -->|Retriable error| F[Try model 5]
-  F -->|Retriable error| G[Try model 6]
-  G -->|Fail all| X[ServiceUnavailableException]
+  A["resolveModelCandidates"] --> B["Try model 1"]
+  B -->|Success| Z["Return content"]
+  B -->|Retriable error| C["Try model 2"]
+  C -->|Retriable error| D["Try model 3"]
+  D -->|Retriable error| E["Try model 4"]
+  E -->|Retriable error| F["Try model 5"]
+  F -->|Retriable error| G["Try model 6"]
+  G -->|Fail all| X["ServiceUnavailableException"]
 ```
 
 Danh sách model text theo thứ tự ưu tiên:
@@ -227,13 +227,13 @@ Danh sách model text theo thứ tự ưu tiên:
 ### Fallback flow giữa các model (Vision)
 ```mermaid
 flowchart TD
-  A[resolveVisionModelCandidates] --> B[Try vision model 1]
-  B -->|Success| Z[Parse parts]
-  B -->|Retriable error| C[Try vision model 2]
-  C -->|Retriable error| D[Try vision model 3]
-  D -->|Retriable error| E[Try vision model 4]
-  E -->|Retriable error| F[Try vision model 5]
-  F -->|Fail all| X[ServiceUnavailableException]
+  A["resolveVisionModelCandidates"] --> B["Try vision model 1"]
+  B -->|Success| Z["Parse parts"]
+  B -->|Retriable error| C["Try vision model 2"]
+  C -->|Retriable error| D["Try vision model 3"]
+  D -->|Retriable error| E["Try vision model 4"]
+  E -->|Retriable error| F["Try vision model 5"]
+  F -->|Fail all| X["ServiceUnavailableException"]
 ```
 
 Danh sách model vision theo thứ tự ưu tiên:
