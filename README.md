@@ -127,8 +127,8 @@ flowchart TD
   V1[Create VNPAY Payment] --> O1[Create Order]
   O1 --> U1[Generate VNPAY URL]
   U1 --> U2[Redirect to VNPAY]
-  U2 --> R1[/payments/vnpay/return]
-  U2 --> I1[/payments/vnpay/ipn]
+  U2 --> R1[payments/vnpay/return]
+  U2 --> I1[payments/vnpay/ipn]
   R1 --> M1[Mark payment status]
   I1 --> M1
   M1 --> T2[Create/Update Transaction]
