@@ -366,7 +366,7 @@ export class AiService {
         parsedParts = cachedImage.parts || [];
         rawVisionOutput = cachedImage.raw || '';
       } else {
-        const visionModels = this.resolveVisionModelCandidates();
+        const visionModels = this.resolveVisionModelCandidates().slice(0, 3);
         if (!visionModels.length) {
           throw new ServiceUnavailableException(
             'Thiếu model vision. Vui lòng cấu hình GROQ_MODEL_VISION.',
@@ -896,7 +896,9 @@ export class AiService {
     };
 
     try {
-      const raw = await this.callGemini(model, apiKey, requestBody);
+      const raw = await this.callGemini(model, apiKey, requestBody, {
+        maxModels: 1,
+      });
       const label = this.parseIntentLabel(raw);
       if (!label) return intent;
 
@@ -1171,23 +1173,65 @@ export class AiService {
         const modelCandidates = this.resolveModelCandidates();
         const model = modelCandidates[0];
         const apiKey = this.config.get<string>('GROQ_API_KEY');
-        const extractedParts =
-          model && apiKey
-            ? await this.extractPartsFromText(message, model, apiKey)
-            : [];
+        const heuristicParts = this.extractPartsFromTextHeuristic(message);
+        let extractedParts: Array<{
+          name?: string;
+          value?: string;
+          vietnameseName?: string;
+        }> = [];
+
+        if (model && apiKey) {
+          try {
+            extractedParts = await this.extractPartsFromText(
+              message,
+              model,
+              apiKey,
+            );
+          } catch (error: any) {
+            this.logger.warn(
+              `BOM extraction by AI failed, fallback heuristic: ${error?.message || error}`,
+            );
+          }
+        }
+
+        if (!extractedParts.length) {
+          extractedParts = heuristicParts;
+        }
 
         if (extractedParts.length) {
-          const cards = await this.searchProductsByParts(
+          const candidateCards = await this.searchProductsByParts(
             extractedParts,
             apiKey,
             model,
+            {
+              maxPerPart: 5,
+              maxTotal: 40,
+            },
           );
-          const validCards = cards.filter(Boolean) as AiProductCard[];
-          productCards.push(...validCards);
-          const missingParts = this.computeMissingParts(
+          let validCards = candidateCards.filter(Boolean) as AiProductCard[];
+          let missingParts = this.computeMissingParts(
             extractedParts,
             validCards,
           );
+
+          if (model && apiKey && validCards.length) {
+            const reconciled = await this.reconcileBomCandidatesWithAi(
+              extractedParts,
+              validCards,
+              model,
+              apiKey,
+            );
+            if (reconciled) {
+              if (reconciled.selectedCards.length) {
+                validCards = reconciled.selectedCards;
+              }
+              missingParts = reconciled.missingParts.length
+                ? reconciled.missingParts
+                : this.computeMissingParts(extractedParts, validCards);
+            }
+          }
+
+          productCards.push(...validCards.slice(0, 12));
           bomSummary = {
             requiredParts: extractedParts
               .map((p) => this.formatPartLabel(p))
@@ -1309,6 +1353,127 @@ export class AiService {
     return missing.slice(0, 12);
   }
 
+  private async reconcileBomCandidatesWithAi(
+    parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
+    candidates: AiProductCard[],
+    model: string,
+    apiKey: string,
+  ): Promise<{ selectedCards: AiProductCard[]; missingParts: string[] } | null> {
+    const normalizedParts = this.normalizeImageParts(parts);
+    if (!normalizedParts.length || !candidates.length) return null;
+
+    const partLabels = normalizedParts.map((p) => this.formatPartLabel(p)).filter(Boolean) as string[];
+    if (!partLabels.length) return null;
+
+    const prompt = [
+      'Bạn là kỹ sư BOM và bộ lọc linh kiện cho cửa hàng điện tử.',
+      'Nhiệm vụ: map danh sách linh kiện yêu cầu với danh sách sản phẩm trong kho.',
+      'Đầu ra BẮT BUỘC là JSON object thuần theo schema:',
+      '{ "selectedProductIds": ["id1", "id2"], "coveredParts": ["part label"], "missingParts": ["part label"] }',
+      'Quy tắc:',
+      '- selectedProductIds chỉ được chọn từ danh sách ứng viên cung cấp.',
+      '- coveredParts chỉ chứa part label có sản phẩm phù hợp trong selectedProductIds.',
+      '- missingParts chỉ chứa part label chưa có sản phẩm phù hợp.',
+      '- Không bịa sản phẩm hoặc part label ngoài dữ liệu đầu vào.',
+      '',
+      `PARTS: ${JSON.stringify(partLabels)}`,
+      `CANDIDATES: ${JSON.stringify(
+        candidates.map((c) => ({
+          id: c.productId,
+          code: c.code || '',
+          name: c.name,
+          category: c.category || '',
+          stock: c.stock,
+        })),
+      )}`,
+      'Chỉ trả về JSON object, không markdown.',
+    ].join('\n');
+
+    const requestBody: GeminiGenerateContentRequest = {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 700,
+      },
+    };
+
+    try {
+      const raw = await this.callGemini(model, apiKey, requestBody, {
+        maxModels: 1,
+      });
+      return this.parseBomReconcileResponse(raw, partLabels, candidates);
+    } catch (error: any) {
+      this.logger.warn(
+        `BOM reconcile by AI failed, fallback deterministic: ${error?.message || error}`,
+      );
+      return null;
+    }
+  }
+
+  private parseBomReconcileResponse(
+    raw: string,
+    partLabels: string[],
+    candidates: AiProductCard[],
+  ) {
+    try {
+      let cleaned = (raw || '')
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+      const firstCurly = cleaned.indexOf('{');
+      const lastCurly = cleaned.lastIndexOf('}');
+      if (firstCurly === -1 || lastCurly === -1 || lastCurly <= firstCurly) {
+        return null;
+      }
+      cleaned = cleaned.substring(firstCurly, lastCurly + 1);
+
+      const parsed = JSON.parse(cleaned) as {
+        selectedProductIds?: string[];
+        coveredParts?: string[];
+        missingParts?: string[];
+      };
+
+      const byId = new Map(candidates.map((c) => [c.productId, c]));
+      const selectedCards =
+        (parsed.selectedProductIds || [])
+          .map((id) => byId.get(String(id)))
+          .filter(Boolean) as AiProductCard[];
+
+      const normalize = (s: string) => this.normalizeForSearch(s || '').replace(/\s+/g, ' ').trim();
+      const normalizedPartLabels = new Map(
+        partLabels.map((p) => [normalize(p), p]),
+      );
+
+      const coveredSet = new Set<string>();
+      for (const item of parsed.coveredParts || []) {
+        const key = normalize(String(item));
+        const label = normalizedPartLabels.get(key);
+        if (label) coveredSet.add(label);
+      }
+
+      const missingSet = new Set<string>();
+      for (const item of parsed.missingParts || []) {
+        const key = normalize(String(item));
+        const label = normalizedPartLabels.get(key);
+        if (label) missingSet.add(label);
+      }
+
+      const fallbackMissing = partLabels.filter((p) => !coveredSet.has(p));
+      const missingParts = missingSet.size
+        ? Array.from(missingSet)
+        : fallbackMissing;
+
+      return {
+        selectedCards: selectedCards.length ? selectedCards : candidates.slice(0, 12),
+        missingParts: missingParts.slice(0, 12),
+      };
+    } catch (error) {
+      this.logger.warn('Failed to parse BOM reconcile response');
+      return null;
+    }
+  }
+
   private async extractPartsFromText(
     message: string,
     model: string,
@@ -1329,12 +1494,103 @@ export class AiService {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 1200,
+        // BOM extraction should be concise JSON; lower token budget reduces latency.
+        maxOutputTokens: 700,
       },
     };
 
-    const raw = await this.callGemini(model, apiKey, requestBody);
+    const raw = await this.callGemini(model, apiKey, requestBody, {
+      maxModels: 2,
+    });
     return this.parsePartsFromResponse(raw);
+  }
+
+  private extractPartsFromTextHeuristic(message: string) {
+    const normalized = this.normalizeText(message || '');
+    if (!normalized) return [];
+
+    const parts: Array<{
+      name?: string;
+      vietnameseName?: string;
+      value?: string;
+    }> = [];
+    const seen = new Set<string>();
+    const pushPart = (key: string, part: { name?: string; vietnameseName?: string; value?: string }) => {
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      parts.push(part);
+    };
+
+    const asksProject =
+      /(du\s*an|project|giam\s*sat|mach|thiet\s*ke|lap\s*rap|prototype|he\s*thong)/.test(
+        normalized,
+      );
+    if (!asksProject) return [];
+
+    const wantsWifi = /\bwi\s*fi\b|\bwifi\b/.test(normalized);
+    const wantsBle = /\bbluetooth\b|\bble\b/.test(normalized);
+    const wantsTemp = /(nhiet\s*do|temperature|ds18b20|dht11|dht22|lm35)/.test(
+      normalized,
+    );
+    const wantsHumidity = /(do\s*am|humidity|dht11|dht22|am230)/.test(
+      normalized,
+    );
+    const wantsDisplay = /(lcd|oled|man\s*hinh|display)/.test(normalized);
+    const wantsRelay = /\brelay\b|dong\s*ngat|bat\s*tat/.test(normalized);
+
+    if (wantsWifi || wantsBle) {
+      pushPart('controller-esp32', {
+        name: 'ESP32 DevKit',
+        vietnameseName: 'Bo vi dieu khien ESP32',
+      });
+    } else if (/arduino|uno|nano/.test(normalized)) {
+      pushPart('controller-arduino', {
+        name: 'Arduino Uno',
+        vietnameseName: 'Bo vi dieu khien Arduino Uno',
+      });
+    } else {
+      pushPart('controller-default', {
+        name: 'Arduino Uno',
+        vietnameseName: 'Bo vi dieu khien Arduino Uno',
+      });
+    }
+
+    if (wantsTemp) {
+      pushPart('sensor-temp', {
+        name: 'DS18B20',
+        vietnameseName: 'Cam bien nhiet do DS18B20',
+      });
+    }
+    if (wantsHumidity) {
+      pushPart('sensor-hum', {
+        name: 'DHT22',
+        vietnameseName: 'Cam bien nhiet do do am DHT22',
+      });
+    }
+    if (wantsDisplay) {
+      pushPart('display-lcd', {
+        name: 'LCD 1602 I2C',
+        vietnameseName: 'Man hinh LCD 16x2',
+      });
+    }
+    if (wantsRelay) {
+      pushPart('relay-1ch', {
+        name: 'Relay 1CH 5V',
+        vietnameseName: 'Module relay 1 kenh 5V',
+      });
+    }
+
+    pushPart('power-5v', { name: 'Nguon 5V', vietnameseName: 'Nguon 5V' });
+    pushPart('wire-jumper', {
+      name: 'Jumper Wire',
+      vietnameseName: 'Day noi mach',
+    });
+    pushPart('breadboard', {
+      name: 'Breadboard',
+      vietnameseName: 'Bang mach thu nghiem',
+    });
+
+    return parts.slice(0, 12);
   }
 
   private normalizeImageParts(
@@ -1360,7 +1616,14 @@ export class AiService {
         value: part.value,
         count: 1,
       };
-      const key = `${kind}::${this.normalizeForSearch(cleaned.value || '')}`;
+      const normalizedName = this.normalizeForSearch(
+        `${cleaned.name || ''} ${cleaned.vietnameseName || ''}`,
+      )
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+      const normalizedValue = this.normalizeForSearch(cleaned.value || '').trim();
+      // Keep different components separated even if they share the same kind and empty value.
+      const key = `${kind}::${normalizedName || 'unknown'}::${normalizedValue || 'novalue'}`;
       const existed = result.get(key);
       if (existed) {
         existed.count += 1;
@@ -1404,7 +1667,7 @@ export class AiService {
     const valueTokens = this.extractValueTokens(part.value || '');
 
     const categoryHints: string[] = [];
-    const excludeTokens = ['sensor', 'cam bien', 'buck', 'boost', 'module'];
+    const excludeTokens: string[] = [];
     switch (part.kind) {
       case 'diode':
         categoryHints.push('diode', 'chinh luu');
@@ -1420,6 +1683,7 @@ export class AiService {
         break;
       case 'regulator':
         categoryHints.push('regulator', '7805', 'on ap');
+        excludeTokens.push('buck', 'boost', 'step down', 'step-up');
         break;
       case 'resistor':
         categoryHints.push('resistor', 'dien tro');
@@ -1813,6 +2077,57 @@ export class AiService {
     return scores;
   }
 
+  private buildRequiredTokenGroups(normalizedMessage: string) {
+    const groups: string[][] = [];
+
+    const hasWifi = /\bwi[\s-]*fi\b|\bwifi\b/.test(normalizedMessage);
+    const hasBluetooth = /\bbluetooth\b|\bble\b/.test(normalizedMessage);
+    const hasZigbee = /\bzigbee\b/.test(normalizedMessage);
+    const hasLora = /\blora\b|\blorawan\b/.test(normalizedMessage);
+    const hasNfc = /\bnfc\b/.test(normalizedMessage);
+    const hasEthernet = /\bethernet\b|\blan\b/.test(normalizedMessage);
+
+    if (hasWifi) groups.push(['wifi']);
+    if (hasBluetooth) groups.push(['bluetooth', 'ble']);
+    if (hasZigbee) groups.push(['zigbee']);
+    if (hasLora) groups.push(['lora', 'lorawan']);
+    if (hasNfc) groups.push(['nfc']);
+    if (hasEthernet) groups.push(['ethernet', 'lan']);
+
+    return groups;
+  }
+
+  private filterScoresByRequiredTokenGroups(
+    scores: ProductScore[],
+    requiredGroups: string[][],
+  ) {
+    if (!requiredGroups.length) return scores;
+
+    return scores.filter(({ product }) => {
+      const text = this.normalizeForSearch(
+        [
+          product.name,
+          product.category,
+          product.description,
+          product.code,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      );
+
+      return requiredGroups.every((group) =>
+        group.some((token) => text.includes(token)),
+      );
+    });
+  }
+
+  private applyDynamicScoreFloor(scores: ProductScore[]) {
+    if (!scores.length) return scores;
+    const topScore = scores[0]?.score ?? 0;
+    const floor = Math.max(35, Math.floor(topScore * 0.45));
+    return scores.filter((s) => s.codeExact || s.score >= floor);
+  }
+
   private assessConfidence(
     scores: ProductScore[],
     queryTokens: string[],
@@ -1849,13 +2164,27 @@ export class AiService {
       };
     }
 
-    const scores = this.scoreProducts(index, queryTokens, valueTokens)
+    const rawScores = this.scoreProducts(index, queryTokens, valueTokens)
       .sort((a, b) => b.score - a.score)
-      .slice(0, 60);
+      .slice(0, 120);
 
-    const confident = this.assessConfidence(scores, queryTokens, valueTokens);
-    const topScores = scores.slice(0, 15);
-    const contextScores = scores.slice(0, 30);
+    const requiredGroups = this.buildRequiredTokenGroups(normalizedMessage);
+    const requiredScores = this.filterScoresByRequiredTokenGroups(
+      rawScores,
+      requiredGroups,
+    );
+
+    const filteredScores = this.applyDynamicScoreFloor(
+      requiredGroups.length ? requiredScores : rawScores,
+    ).slice(0, 60);
+
+    const confident = this.assessConfidence(
+      filteredScores,
+      queryTokens,
+      valueTokens,
+    );
+    const topScores = filteredScores.slice(0, 15);
+    const contextScores = filteredScores.slice(0, 30);
 
     const cards = topScores.map((s) => ({
       productId: s.product.productId,
@@ -1885,9 +2214,9 @@ export class AiService {
       meta: {
         tokens: queryTokens,
         valueTokens,
-        totalCandidates: scores.length,
+        totalCandidates: filteredScores.length,
         confident,
-        topScore: scores[0]?.score ?? 0,
+        topScore: filteredScores[0]?.score ?? 0,
       },
     };
   }
@@ -2189,9 +2518,13 @@ export class AiService {
     parts: Array<{ name?: string; value?: string; vietnameseName?: string }>,
     apiKey?: string,
     model?: string,
+    options?: { maxPerPart?: number; maxTotal?: number },
   ) {
     const normalizedParts = this.normalizeImageParts(parts);
     if (!normalizedParts.length) return [];
+
+    const maxPerPart = Math.min(Math.max(options?.maxPerPart ?? 2, 1), 8);
+    const maxTotal = Math.min(Math.max(options?.maxTotal ?? 10, 1), 60);
 
     const index = await this.getProductIndex();
     const selected: AiProductCard[] = [];
@@ -2256,7 +2589,7 @@ export class AiService {
         })
         .filter(Boolean)
         .sort((a, b) => (b?.score || 0) - (a?.score || 0))
-        .slice(0, 2);
+        .slice(0, maxPerPart);
 
       for (const row of scored) {
         if (!row) continue;
@@ -2274,7 +2607,7 @@ export class AiService {
       }
     }
 
-    return selected.slice(0, 10);
+    return selected.slice(0, maxTotal);
   }
 
   private async filterProductsByAI(
@@ -2732,6 +3065,7 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
     model: string,
     apiKey: string,
     body: GeminiGenerateContentRequest,
+    options?: { maxModels?: number },
   ) {
     if (this.hasInlineData(body)) {
       throw new ServiceUnavailableException(
@@ -2739,7 +3073,11 @@ Chỉ trả về JSON ARRAY. Không giải thích.`;
       );
     }
 
-    const models = this.resolveModelCandidates(model);
+    const maxModels = Math.max(
+      1,
+      Math.min(options?.maxModels ?? 3, 6),
+    );
+    const models = this.resolveModelCandidates(model).slice(0, maxModels);
     let lastError: unknown = null;
 
     for (let i = 0; i < models.length; i += 1) {

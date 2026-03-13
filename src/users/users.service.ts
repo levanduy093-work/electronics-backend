@@ -326,14 +326,17 @@ export class UsersService {
   }
 
   async saveAiChatHistory(userId: string, messages: any[]) {
-    const user = await this.userModel.findById(userId);
+    const sanitized = this.sanitizeAiChatMessages(messages);
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { aiChatHistory: sanitized } },
+        { new: true, lean: true },
+      )
+      .exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
-    const sanitized = this.sanitizeAiChatMessages(messages);
-    (user as any).aiChatHistory = sanitized;
-    await user.save();
 
     return {
       messages: (user as any).aiChatHistory || [],
@@ -342,12 +345,16 @@ export class UsersService {
   }
 
   async clearAiChatHistory(userId: string) {
-    const user = await this.userModel.findById(userId);
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { aiChatHistory: [] } },
+        { new: true, lean: true },
+      )
+      .exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    (user as any).aiChatHistory = [];
-    await user.save();
     return { success: true };
   }
 
@@ -364,13 +371,17 @@ export class UsersService {
   }
 
   async saveAiChatArchives(userId: string, archives: any[]) {
-    const user = await this.userModel.findById(userId);
+    const sanitized = this.sanitizeAiChatArchives(archives);
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { aiChatArchives: sanitized } },
+        { new: true, lean: true },
+      )
+      .exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
-
-    (user as any).aiChatArchives = this.sanitizeAiChatArchives(archives);
-    await user.save();
 
     return {
       archives: (user as any).aiChatArchives || [],
@@ -379,12 +390,16 @@ export class UsersService {
   }
 
   async clearAiChatArchives(userId: string) {
-    const user = await this.userModel.findById(userId);
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        userId,
+        { $set: { aiChatArchives: [] } },
+        { new: true, lean: true },
+      )
+      .exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    (user as any).aiChatArchives = [];
-    await user.save();
     return { success: true };
   }
 
